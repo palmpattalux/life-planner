@@ -1,21 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { missingEnv, supabaseKey, supabaseUrl } from "./env";
 
 const PUBLIC_PATHS = ["/login", "/auth"];
 
 // Refreshes the login session on every request and sends signed-out
 // visitors to /login.
 export async function updateSession(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
   // Without these the app can't talk to Supabase. Say so plainly instead of
   // crashing with a generic error page.
-  if (!url || !key || !url.startsWith("https://")) {
+  const missing = missingEnv();
+  if (missing.length > 0) {
     return new NextResponse(
-      "Setup needed: add NEXT_PUBLIC_SUPABASE_URL (starting with https://) and " +
-        "NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel -> Settings -> Environment Variables, " +
-        "then redeploy.",
+      "Setup needed in Vercel -> Settings -> Environment Variables:\n- " +
+        missing.join("\n- ") +
+        "\nThen redeploy.",
       { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }
@@ -23,8 +22,8 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    url,
-    key,
+    supabaseUrl!,
+    supabaseKey!,
     {
       cookies: {
         getAll() {
