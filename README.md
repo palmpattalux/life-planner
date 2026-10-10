@@ -5,6 +5,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
 - Press **b** to add a circle at the cursor.
+- Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it.
 - Drag a circle to move it anywhere.
 - Click a circle to open its menu beside it (empty for now). Click the board to close it.
 

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 type Circle = { id: number; x: number; y: number };
 type View = { x: number; y: number; scale: number };
+type Point = { x: number; y: number };
+type Line = { id: number; from: Point; to: Point };
 
 const SIZE = 64;
 // Moving less than this many pixels between press and release counts as a click.
@@ -27,10 +29,17 @@ function isTrackpadSwipe(e: WheelEvent) {
 
 // A huge white board with faint grey dots and a light grey edge.
 // Two-finger swipe moves around; pinch or mouse wheel zooms. Press "b" to add a circle at the cursor.
+// Hold "n" to draw a line from the cursor; let go to confirm it.
 // Drag a circle to move it; click it to open its menu.
 export function Board() {
   const [circles, setCircles] = useState<Circle[]>([]);
   const [menuFor, setMenuFor] = useState<number | null>(null);
+  const [lines, setLines] = useState<Line[]>([]);
+  // The line being drawn while N is held: starts where N was pressed,
+  // ends at the cursor.
+  const [draft, setDraft] = useState<{ from: Point; to: Point } | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -87,22 +96,50 @@ export function Board() {
   }, []);
 
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key.toLowerCase() !== "b" || e.repeat) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+    function cursorOnBoard() {
       const screen = pointer.current ?? {
         x: window.innerWidth / 2,
         y: window.innerHeight / 2,
       };
-      const at = toBoard(screen.x, screen.y);
-      setCircles((cs) => [...cs, { id: nextId.current++, x: at.x, y: at.y }]);
+      return toBoard(screen.x, screen.y);
     }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === "b") {
+        const at = cursorOnBoard();
+        setCircles((cs) => [...cs, { id: nextId.current++, x: at.x, y: at.y }]);
+      } else if (key === "n" && !draftRef.current) {
+        const at = cursorOnBoard();
+        setDraft({ from: at, to: at });
+      }
+    }
+
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key.toLowerCase() !== "n") return;
+      const d = draftRef.current;
+      if (!d) return;
+      setDraft(null);
+      // Pressing and releasing N without moving doesn't leave a dot behind.
+      if (Math.hypot(d.to.x - d.from.x, d.to.y - d.from.y) * viewRef.current.scale < CLICK_SLOP) return;
+      setLines((ls) => [...ls, { id: nextId.current++, from: d.from, to: d.to }]);
+    }
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 
   function onPointerMove(e: React.PointerEvent) {
     pointer.current = { x: e.clientX, y: e.clientY };
+    if (draftRef.current) {
+      const to = toBoard(e.clientX, e.clientY);
+      setDraft((dr) => (dr ? { ...dr, to } : dr));
+    }
     const d = drag.current;
     if (!d) return;
     if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < CLICK_SLOP) return;
@@ -161,6 +198,26 @@ export function Board() {
             backgroundSize: `${DOT_SPACING}px ${DOT_SPACING}px`,
           }}
         />
+
+        <svg
+          className="pointer-events-none absolute left-0 top-0 overflow-visible"
+          width={BOARD_W}
+          height={BOARD_H}
+        >
+          {[...lines, ...(draft ? [{ id: -1, ...draft }] : [])].map((l) => (
+            <line
+              key={l.id}
+              data-line={l.id === -1 ? "draft" : "line"}
+              x1={l.from.x}
+              y1={l.from.y}
+              x2={l.to.x}
+              y2={l.to.y}
+              stroke="#1c1917"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          ))}
+        </svg>
 
         {circles.map((c) => (
           <div
