@@ -16,8 +16,17 @@ const DOT_SPACING = 24;
 const MIN_SCALE = 0.06;
 const MAX_SCALE = 4;
 
+// Browsers don't say whether a wheel event came from a mouse or a trackpad.
+// Trackpads send pixel deltas that are small, fractional or sideways; mouse
+// wheels send big whole-number steps straight up or down.
+function isTrackpadSwipe(e: WheelEvent) {
+  if (e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return false;
+  if (e.deltaX !== 0) return true;
+  return !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 50;
+}
+
 // A huge white board with faint grey dots and a light grey edge.
-// Scroll wheel or trackpad zooms. Press "b" to add a circle at the cursor.
+// Two-finger swipe moves around; pinch or mouse wheel zooms. Press "b" to add a circle at the cursor.
 // Drag a circle to move it; click it to open its menu.
 export function Board() {
   const [circles, setCircles] = useState<Circle[]>([]);
@@ -52,11 +61,16 @@ export function Board() {
     });
   }, []);
 
-  // Zoom towards the cursor. Trackpad pinch arrives as a wheel event with ctrlKey.
+  // Trackpad: two-finger swipe moves around, pinch zooms (pinch arrives as a
+  // wheel event with ctrlKey). Mouse scroll wheel zooms.
   useEffect(() => {
     const el = rootRef.current!;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
+      if (!e.ctrlKey && isTrackpadSwipe(e)) {
+        setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
+        return;
+      }
       const speed = e.ctrlKey ? 0.01 : 0.0015;
       setView((v) => {
         const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * Math.exp(-e.deltaY * speed)));
