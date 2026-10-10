@@ -37,6 +37,21 @@ Open http://localhost:3000.
 3. Click **Deploy**.
 4. Back in Supabase, open **Authentication → URL Configuration** and set **Site URL** to your Vercel address (for example `https://life-planner.vercel.app`) so confirmation emails link back to the app.
 
+### 4. Make confirmation links work on any device (recommended)
+
+By default the "Confirm your email" link only logs you in if you open it in
+the same browser you signed up in. To make it work everywhere (for example,
+signing up on a laptop and tapping the link in the Gmail app on your phone):
+
+1. In Supabase open **Authentication → Emails → Templates → Confirm signup**.
+2. Replace the link in the message body with:
+
+   ```html
+   <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email">Confirm your email</a>
+   ```
+
+3. Click **Save**.
+
 ## How it's organised
 
 | Path | What it does |
