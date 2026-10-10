@@ -4,6 +4,7 @@ A simple white board, like Miro. Log in from any device.
 
 - Press **b** to add a circle at the cursor.
 - Drag a circle to move it anywhere.
+- Click a circle to open its menu beside it (empty for now). Click the board to close it.
 
 Built with Next.js, TypeScript, Tailwind CSS and Supabase (login). Deployed on Vercel.
 
