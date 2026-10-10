@@ -7,6 +7,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Press **b** to add a circle at the cursor.
 - Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it.
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.
+- Drop a line end near a circle and it attaches: moving the circle moves that end. Drag the end away to detach it.
 - Drag a circle to move it anywhere.
 - Click a circle to open its menu beside it (empty for now). Click the board to close it.
 

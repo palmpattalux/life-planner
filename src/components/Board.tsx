@@ -5,7 +5,10 @@ import { useEffect, useRef, useState } from "react";
 type Circle = { id: number; x: number; y: number };
 type View = { x: number; y: number; scale: number };
 type Point = { x: number; y: number };
-type Line = { id: number; from: Point; to: Point };
+// A line end is either a free point or attached to a circle (fromCircle /
+// toCircle), in which case it sits at that circle's centre and follows it.
+type Line = { id: number; from: Point; to: Point; fromCircle?: number; toCircle?: number };
+type End = "from" | "to";
 
 const SIZE = 64;
 // Moving less than this many pixels between press and release counts as a click.
@@ -17,6 +20,9 @@ const BOARD_H = 10000;
 const DOT_SPACING = 24;
 const MIN_SCALE = 0.06;
 const MAX_SCALE = 4;
+// How close (in screen pixels, beyond the circle's edge) a dragged line end
+// has to be to a circle to attach to it.
+const ATTACH_DISTANCE = 16;
 
 // Browsers don't say whether a wheel event came from a mouse or a trackpad.
 // Trackpads send pixel deltas that are small, fractional or sideways; mouse
@@ -31,7 +37,8 @@ function isTrackpadSwipe(e: WheelEvent) {
 // Two-finger swipe moves around; pinch or mouse wheel zooms. Press "b" to add a circle at the cursor.
 // Hold "n" to draw a line from the cursor; let go to confirm it.
 // Drag a circle or line to move it. Click a circle to open its menu; click a
-// line to show dots on its ends, which can be dragged to move each end.
+// line to show dots on its ends, which can be dragged to move each end. Drop an
+// end near a circle and it attaches, following the circle when it moves.
 export function Board() {
   const [circles, setCircles] = useState<Circle[]>([]);
   const [menuFor, setMenuFor] = useState<number | null>(null);
@@ -63,6 +70,15 @@ export function Board() {
   function toBoard(sx: number, sy: number) {
     const v = viewRef.current;
     return { x: (sx - v.x) / v.scale, y: (sy - v.y) / v.scale };
+  }
+
+  // The line with attached ends moved to their circles' centres.
+  function resolve(l: Line, cs: Circle[] = circles): Line {
+    const at = (end: End): Point => {
+      const c = cs.find((c) => c.id === l[`${end}Circle`]);
+      return c ? { x: c.x, y: c.y } : l[end];
+    };
+    return { ...l, from: at("from"), to: at("to") };
   }
 
   // Start with the middle of the board in the middle of the screen.
@@ -156,14 +172,22 @@ export function Board() {
       setCircles((cs) => cs.map((c) => (c.id === d.id ? { ...c, x: o.x + dx, y: o.y + dy } : c)));
       return;
     }
-    const o = d.orig as Line;
+    const o = d.orig as Line; // ends already resolved to positions
     const move = (pt: Point) => ({ x: pt.x + dx, y: pt.y + dy });
-    const next: Line =
-      d.kind === "line"
-        ? { ...o, from: move(o.from), to: move(o.to) }
-        : d.kind === "from"
-          ? { ...o, from: move(o.from) }
-          : { ...o, to: move(o.to) };
+    let next: Line;
+    if (d.kind === "line") {
+      // Moving the whole line takes it off any circles it was attached to.
+      next = { id: o.id, from: move(o.from), to: move(o.to) };
+    } else {
+      const end = d.kind;
+      const pos = move(o[end]);
+      const reach = SIZE / 2 + ATTACH_DISTANCE / viewRef.current.scale;
+      const near = circles
+        .map((c) => ({ c, dist: Math.hypot(c.x - pos.x, c.y - pos.y) }))
+        .filter(({ dist }) => dist <= reach)
+        .sort((a, b) => a.dist - b.dist)[0]?.c;
+      next = { ...o, [end]: near ? { x: near.x, y: near.y } : pos, [`${end}Circle`]: near?.id };
+    }
     setLines((ls) => ls.map((l) => (l.id === d.id ? next : l)));
   }
 
@@ -174,7 +198,7 @@ export function Board() {
       kind,
       id: item.id,
       start: toBoard(e.clientX, e.clientY),
-      orig: item,
+      orig: kind === "circle" ? item : resolve(item as Line),
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
@@ -231,7 +255,7 @@ export function Board() {
           width={BOARD_W}
           height={BOARD_H}
         >
-          {lines.map((l) => (
+          {lines.map((raw) => resolve(raw)).map((l) => (
             <g key={l.id}>
               <line
                 data-line="line"
@@ -254,23 +278,8 @@ export function Board() {
                 strokeWidth={14 / view.scale}
                 className="cursor-grab active:cursor-grabbing"
                 style={{ pointerEvents: "stroke" }}
-                onPointerDown={(e) => startDrag(e, "line", l)}
+                onPointerDown={(e) => startDrag(e, "line", lines.find((x) => x.id === l.id)!)}
               />
-              {selectedLine === l.id &&
-                (["from", "to"] as const).map((end) => (
-                  <circle
-                    key={end}
-                    data-line-end={end}
-                    cx={l[end].x}
-                    cy={l[end].y}
-                    r={6 / view.scale}
-                    fill="white"
-                    stroke="#1c1917"
-                    strokeWidth={1.5 / view.scale}
-                    className="pointer-events-auto cursor-move"
-                    onPointerDown={(e) => startDrag(e, end, l)}
-                  />
-                ))}
             </g>
           ))}
           {draft && (
@@ -295,6 +304,35 @@ export function Board() {
             style={{ width: SIZE, height: SIZE, left: c.x - SIZE / 2, top: c.y - SIZE / 2 }}
           />
         ))}
+
+
+        {/* End dots sit above circles so an attached end can still be grabbed. */}
+        <svg
+          className="pointer-events-none absolute left-0 top-0 overflow-visible"
+          width={BOARD_W}
+          height={BOARD_H}
+        >
+          {lines
+            .filter((raw) => raw.id === selectedLine)
+            .map((raw) => resolve(raw))
+            .map((l) =>
+              (["from", "to"] as const).map((end) => (
+                <circle
+                  key={end}
+                  data-line-end={end}
+                  data-attached={l[`${end}Circle`] !== undefined ? "yes" : "no"}
+                  cx={l[end].x}
+                  cy={l[end].y}
+                  r={6 / view.scale}
+                  fill="white"
+                  stroke="#1c1917"
+                  strokeWidth={1.5 / view.scale}
+                  className="pointer-events-auto cursor-move"
+                  onPointerDown={(e) => startDrag(e, end, lines.find((x) => x.id === l.id)!)}
+                />
+              )),
+            )}
+        </svg>
 
         {menuCircle && (
           <div
