@@ -24,9 +24,9 @@ export async function GET(request: NextRequest) {
     if (!error) return NextResponse.redirect(`${origin}/`);
   }
 
-  // By the time the link reaches us Supabase has usually already confirmed
-  // the email, so logging in normally works.
   return NextResponse.redirect(
-    `${origin}/login?info=${encodeURIComponent("Your email is confirmed. Log in below.")}`,
+    `${origin}/login?error=${encodeURIComponent(
+      "That link didn't log you in. Try logging in, or create your account again if it says your email isn't confirmed.",
+    )}`,
   );
 }
