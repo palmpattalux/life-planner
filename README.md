@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Life Planner
 
-## Getting Started
+A visual, vertical timeline of the phases of your life, with the goals and
+events that belong to each one. It answers one question fast:
+**"In this phase of my life, what should I be doing?"**
 
-First, run the development server:
+Plan once, then come back for a quick look and get back on track.
+
+- **Now**: opens on the phase you're in today, what it's about, your top goals and what's coming up.
+- **Timeline**: every phase on one vertical line, past at the top, future at the bottom. Add, edit and tick off goals and events.
+- Log in from any device. Your data is private to your account.
+
+Built with Next.js, TypeScript, Tailwind CSS and Supabase. Deployed on Vercel.
+
+## Setup
+
+### 1. Supabase (login and database)
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor → New query**, paste everything in [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
+3. Open **Project Settings → API** (or the **Connect** button) and copy the **Project URL** and the **anon / publishable key**.
+
+### 2. Run it on your computer (optional)
 
 ```bash
+npm install
+cp .env.example .env.local   # then paste your two Supabase values in
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Put it online with Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Sign in at [vercel.com](https://vercel.com) with GitHub and import this repo.
+2. Add the two environment variables from `.env.example` with your Supabase values.
+3. Click **Deploy**.
+4. Back in Supabase, open **Authentication → URL Configuration** and set **Site URL** to your Vercel address (for example `https://life-planner.vercel.app`) so confirmation emails link back to the app.
 
-## Learn More
+## How it's organised
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Path | What it does |
+| --- | --- |
+| `src/app/page.tsx` | The **Now** screen |
+| `src/app/timeline/page.tsx` | The vertical timeline board |
+| `src/app/login/` | Log in and sign up |
+| `src/app/actions.ts` | Saving, editing and deleting phases and items |
+| `src/middleware.ts` | Keeps you logged in and protects every page |
+| `supabase/schema.sql` | Database tables and privacy rules |

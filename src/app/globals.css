@@ -1,26 +1,35 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf8f5;
+  --foreground: #1c1917;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base outline-none focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10;
+  }
+  .btn-primary {
+    @apply rounded-lg bg-stone-900 px-4 py-2 font-medium text-white hover:bg-stone-700 active:scale-[0.98];
+  }
+  .btn-secondary {
+    @apply rounded-lg border border-stone-300 bg-white px-4 py-2 font-medium hover:bg-stone-100 active:scale-[0.98];
+  }
+  .btn-link {
+    @apply text-sm text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline;
+  }
+  .card {
+    @apply rounded-2xl border border-stone-200 bg-white p-5 shadow-sm;
+  }
 }
