@@ -6,11 +6,25 @@ const PUBLIC_PATHS = ["/login", "/auth"];
 // Refreshes the login session on every request and sends signed-out
 // visitors to /login.
 export async function updateSession(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // Without these the app can't talk to Supabase. Say so plainly instead of
+  // crashing with a generic error page.
+  if (!url || !key || !url.startsWith("https://")) {
+    return new NextResponse(
+      "Setup needed: add NEXT_PUBLIC_SUPABASE_URL (starting with https://) and " +
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel -> Settings -> Environment Variables, " +
+        "then redeploy.",
+      { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } },
+    );
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    key,
     {
       cookies: {
         getAll() {
@@ -37,15 +51,15 @@ export async function updateSession(request: NextRequest) {
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
 
   if (!user && !isPublic) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    const to = request.nextUrl.clone();
+    to.pathname = "/login";
+    return NextResponse.redirect(to);
   }
 
   if (user && path === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+    const to = request.nextUrl.clone();
+    to.pathname = "/";
+    return NextResponse.redirect(to);
   }
 
   return response;
