@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { LineMenu } from "./LineMenu";
+import { timelineTicks, type Timeline } from "./timeline";
 
 type Point = { x: number; y: number };
 type View = { x: number; y: number; scale: number };
@@ -17,7 +19,15 @@ type Text = {
 // A line end is either a free point or attached to a circle or text
 // (fromItem / toItem), in which case it sits at that item's centre and
 // follows it.
-type Line = { id: number; from: Point; to: Point; fromItem?: number; toItem?: number };
+// A line with `time` is drawn as a timeline: a ruler of evenly spaced dates.
+type Line = {
+  id: number;
+  from: Point;
+  to: Point;
+  fromItem?: number;
+  toItem?: number;
+  time?: Timeline;
+};
 type End = "from" | "to";
 type Selected = { kind: "circle" | "text"; id: number };
 type DragKind = "circle" | "text" | "line" | End;
@@ -38,6 +48,11 @@ const BOARD_H = 10000;
 const DOT_SPACING = 24;
 const MIN_SCALE = 0.06;
 const MAX_SCALE = 4;
+// Timeline ruler sizes, in board units.
+const TICK = 6;
+const MAJOR_TICK = 10;
+const TICK_LABEL_SIZE = 11;
+const TICK_LABEL_GAP = 56; // roughly the width of one label
 // How close (in screen pixels, beyond the circle's edge) a dragged line end
 // has to be to a circle to attach to it.
 const ATTACH_DISTANCE = 16;
@@ -62,7 +77,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 // - The circle menu's "Text" turns the circle into text, ready to type. Enter or
 //   clicking elsewhere confirms. Double-click text to edit it again.
 // - Click a line to show dots on its ends; drag them to move each end. Drop an
-//   end near a circle and it attaches, following it when it moves.
+//   end near a circle and it attaches, following it when it moves. The line's
+//   menu has "Time", which turns it into a timeline (see LineMenu).
 export function Board() {
   const [circles, setCircles] = useState<Circle[]>([]);
   const [texts, setTexts] = useState<Text[]>([]);
@@ -179,8 +195,11 @@ export function Board() {
       return toBoard(screen.x, screen.y);
     }
 
-    // Typing into a text shouldn't add circles or lines.
-    const typing = (e: KeyboardEvent) => (e.target as HTMLElement | null)?.isContentEditable;
+    // Typing into a text or a menu field shouldn't add circles or lines.
+    const typing = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+    };
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
@@ -240,7 +259,7 @@ export function Board() {
     let next: Line;
     if (d.kind === "line") {
       // Moving the whole line takes it off anything it was attached to.
-      next = { id: o.id, from: move(o.from), to: move(o.to) };
+      next = { id: o.id, from: move(o.from), to: move(o.to), time: o.time };
     } else {
       const end = d.kind;
       const pos = move(o[end]);
@@ -324,6 +343,61 @@ export function Board() {
     setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
 
+  // The ruler marks for a timeline line: one tick per day/week/month/year,
+  // evenly spaced from the line's start to its end. Labels are thinned out
+  // when they would overlap.
+  function timelineMarks(l: Line) {
+    const labels = l.time && timelineTicks(l.time);
+    if (!labels) return null;
+    const dx = l.to.x - l.from.x;
+    const dy = l.to.y - l.from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // Perpendicular to the line, pointing down-ish so labels sit under it.
+    let nx = -dy / len;
+    let ny = dx / len;
+    if (ny < 0 || (ny === 0 && nx < 0)) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const n = labels.length;
+    const spacing = n > 1 ? len / (n - 1) : len;
+    const labelEvery = Math.max(1, Math.ceil(TICK_LABEL_GAP / spacing));
+    const tickEvery = Math.max(1, Math.ceil(3 / spacing));
+    return labels.map((text, i) => {
+      const isEnd = i === 0 || i === n - 1;
+      if (!isEnd && i % tickEvery !== 0) return null;
+      const t = n > 1 ? i / (n - 1) : 0;
+      const x = l.from.x + dx * t;
+      const y = l.from.y + dy * t;
+      const labelled = isEnd || (i % labelEvery === 0 && n - 1 - i >= labelEvery / 2);
+      const size = labelled ? MAJOR_TICK : TICK;
+      return (
+        <g key={i} data-tick={labelled ? text : undefined}>
+          <line
+            x1={x - nx * size}
+            y1={y - ny * size}
+            x2={x + nx * size}
+            y2={y + ny * size}
+            stroke="#1c1917"
+            strokeWidth={labelled ? 1.5 : 1}
+          />
+          {labelled && (
+            <text
+              x={x + nx * (MAJOR_TICK + TICK_LABEL_SIZE)}
+              y={y + ny * (MAJOR_TICK + TICK_LABEL_SIZE)}
+              fontSize={TICK_LABEL_SIZE}
+              fill="#57534e"
+              textAnchor="middle"
+              dominantBaseline="middle"
+            >
+              {text}
+            </text>
+          )}
+        </g>
+      );
+    });
+  }
+
   // Fade the dots out when zoomed far out so they don't turn into a grey haze.
   const dotAlpha = 0.12 * clamp((view.scale - 0.2) / 0.3, 0, 1);
   const menuCircle = selected?.kind === "circle" ? circles.find((c) => c.id === selected.id) : undefined;
@@ -346,7 +420,8 @@ export function Board() {
   return (
     <div
       ref={rootRef}
-      className="fixed inset-0 touch-none select-none overflow-hidden bg-white"
+      // overflow-clip (not hidden): focusing a field in a menu must not scroll the board.
+      className="fixed inset-0 touch-none select-none overflow-clip bg-white"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => (drag.current = null)}
@@ -390,6 +465,7 @@ export function Board() {
                 strokeWidth={2}
                 strokeLinecap="round"
               />
+              {timelineMarks(l)}
               {/* Wider invisible stroke so the line is easy to grab. */}
               <line
                 data-line-hit={l.id}
@@ -519,6 +595,25 @@ export function Board() {
             ))}
         </svg>
 
+        {lines
+          .filter((l) => l.id === selectedLine)
+          .map(resolve)
+          .map((l) => (
+            <div
+              key={l.id}
+              className="absolute"
+              style={{ left: (l.from.x + l.to.x) / 2 + 12, top: (l.from.y + l.to.y) / 2 + 12 }}
+            >
+              <LineMenu
+                time={l.time}
+                onDone={(time) => {
+                  setLines((ls) => ls.map((x) => (x.id === l.id ? { ...x, time } : x)));
+                  setSelectedLine(null);
+                }}
+              />
+            </div>
+          ))}
+
         {menuCircle && (
           <div
             data-menu="circle"
@@ -554,7 +649,7 @@ function TextEditor({
   useEffect(() => {
     const el = ref.current!;
     el.textContent = initial;
-    el.focus();
+    el.focus({ preventScroll: true });
     // Put the cursor at the end.
     const range = document.createRange();
     range.selectNodeContents(el);
