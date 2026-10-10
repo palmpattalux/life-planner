@@ -2,19 +2,37 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Circle = { id: number; x: number; y: number };
-type View = { x: number; y: number; scale: number };
 type Point = { x: number; y: number };
-// A line end is either a free point or attached to a circle (fromCircle /
-// toCircle), in which case it sits at that circle's centre and follows it.
-type Line = { id: number; from: Point; to: Point; fromCircle?: number; toCircle?: number };
+type View = { x: number; y: number; scale: number };
+type Circle = { id: number; x: number; y: number; size: number };
+type Text = {
+  id: number;
+  x: number; // centre
+  y: number;
+  text: string;
+  fontSize: number;
+  color: string;
+  bold: boolean;
+};
+// A line end is either a free point or attached to a circle or text
+// (fromItem / toItem), in which case it sits at that item's centre and
+// follows it.
+type Line = { id: number; from: Point; to: Point; fromItem?: number; toItem?: number };
 type End = "from" | "to";
+type Selected = { kind: "circle" | "text"; id: number };
+type DragKind = "circle" | "text" | "line" | End;
 
-const SIZE = 64;
+const CIRCLE_SIZE = 64;
+const MIN_CIRCLE = 8;
+const MAX_CIRCLE = 2000;
+const TEXT_SIZE = 24;
+const MIN_TEXT = 6;
+const MAX_TEXT = 800;
+const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
 // Moving less than this many pixels between press and release counts as a click.
 const CLICK_SLOP = 4;
 
-// The board itself, in board units. Circles live inside it.
+// The board itself, in board units. Everything lives inside it.
 const BOARD_W = 10000;
 const BOARD_H = 10000;
 const DOT_SPACING = 24;
@@ -33,33 +51,49 @@ function isTrackpadSwipe(e: WheelEvent) {
   return !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 50;
 }
 
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
 // A huge white board with faint grey dots and a light grey edge.
-// Two-finger swipe moves around; pinch or mouse wheel zooms. Press "b" to add a circle at the cursor.
-// Hold "n" to draw a line from the cursor; let go to confirm it.
-// Drag a circle or line to move it. Click a circle to open its menu; click a
-// line to show dots on its ends, which can be dragged to move each end. Drop an
-// end near a circle and it attaches, following the circle when it moves.
+// - Two-finger swipe moves around; pinch or mouse wheel zooms.
+// - "b" adds a circle at the cursor. Hold "n" to draw a line; let go to confirm.
+// - Drag circles, texts and lines to move them.
+// - Click a circle or text to select it and open its menu. While selected, the
+//   scroll wheel / trackpad resizes it instead of moving the board.
+// - The circle menu's "Text" turns the circle into text, ready to type. Enter or
+//   clicking elsewhere confirms. Double-click text to edit it again.
+// - Click a line to show dots on its ends; drag them to move each end. Drop an
+//   end near a circle and it attaches, following it when it moves.
 export function Board() {
   const [circles, setCircles] = useState<Circle[]>([]);
-  const [menuFor, setMenuFor] = useState<number | null>(null);
+  const [texts, setTexts] = useState<Text[]>([]);
   const [lines, setLines] = useState<Line[]>([]);
+  const [selected, setSelected] = useState<Selected | null>(null);
+  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
+  // Which text is showing its px size label while being resized.
+  const [sizeShownFor, setSizeShownFor] = useState<number | null>(null);
+  const sizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The line being drawn while N is held: starts where N was pressed,
   // ends at the cursor.
   const [draft, setDraft] = useState<{ from: Point; to: Point } | null>(null);
+  const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
+
+  // Event listeners set up once read the latest values through refs.
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const viewRef = useRef(view);
   viewRef.current = view;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+
   const rootRef = useRef<HTMLDivElement>(null);
-  const pointer = useRef<{ x: number; y: number } | null>(null);
-  const [selectedLine, setSelectedLine] = useState<number | null>(null);
-  // What is being dragged: a circle, a whole line, or one end of a line.
+  const pointer = useRef<Point | null>(null);
+  // What is being dragged and how it was when the drag began.
   const drag = useRef<{
-    kind: "circle" | "line" | "from" | "to";
+    kind: DragKind;
     id: number;
     start: Point; // board position where the drag began
-    orig: Circle | Line; // the item as it was when the drag began
+    orig: Point | Line; // item centre, or the line with ends resolved
     startX: number;
     startY: number;
     moved: boolean;
@@ -67,18 +101,19 @@ export function Board() {
   const nextId = useRef(1);
 
   // Screen position -> board position.
-  function toBoard(sx: number, sy: number) {
+  function toBoard(sx: number, sy: number): Point {
     const v = viewRef.current;
     return { x: (sx - v.x) / v.scale, y: (sy - v.y) / v.scale };
   }
 
-  // The line with attached ends moved to their circles' centres.
-  function resolve(l: Line, cs: Circle[] = circles): Line {
-    const at = (end: End): Point => {
-      const c = cs.find((c) => c.id === l[`${end}Circle`]);
-      return c ? { x: c.x, y: c.y } : l[end];
-    };
-    return { ...l, from: at("from"), to: at("to") };
+  function itemPos(id: number | undefined): Point | undefined {
+    const item = circles.find((c) => c.id === id) ?? texts.find((t) => t.id === id);
+    return item && { x: item.x, y: item.y };
+  }
+
+  // The line with attached ends moved to their items' centres.
+  function resolve(l: Line): Line {
+    return { ...l, from: itemPos(l.fromItem) ?? l.from, to: itemPos(l.toItem) ?? l.to };
   }
 
   // Start with the middle of the board in the middle of the screen.
@@ -90,19 +125,39 @@ export function Board() {
     });
   }, []);
 
-  // Trackpad: two-finger swipe moves around, pinch zooms (pinch arrives as a
-  // wheel event with ctrlKey). Mouse scroll wheel zooms.
+  // Scroll wheel / trackpad. With a circle or text selected it resizes that
+  // item. Otherwise: two-finger swipe moves around, pinch zooms (pinch arrives
+  // as a wheel event with ctrlKey), mouse wheel zooms.
   useEffect(() => {
     const el = rootRef.current!;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
+
+      const sel = selectedRef.current;
+      if (sel) {
+        const k = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.002));
+        if (sel.kind === "circle") {
+          setCircles((cs) =>
+            cs.map((c) => (c.id === sel.id ? { ...c, size: clamp(c.size * k, MIN_CIRCLE, MAX_CIRCLE) } : c)),
+          );
+        } else {
+          setTexts((ts) =>
+            ts.map((t) => (t.id === sel.id ? { ...t, fontSize: clamp(t.fontSize * k, MIN_TEXT, MAX_TEXT) } : t)),
+          );
+          setSizeShownFor(sel.id);
+          if (sizeTimer.current) clearTimeout(sizeTimer.current);
+          sizeTimer.current = setTimeout(() => setSizeShownFor(null), 900);
+        }
+        return;
+      }
+
       if (!e.ctrlKey && isTrackpadSwipe(e)) {
         setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
         return;
       }
       const speed = e.ctrlKey ? 0.01 : 0.0015;
       setView((v) => {
-        const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * Math.exp(-e.deltaY * speed)));
+        const scale = clamp(v.scale * Math.exp(-e.deltaY * speed), MIN_SCALE, MAX_SCALE);
         const k = scale / v.scale;
         return {
           scale,
@@ -124,12 +179,15 @@ export function Board() {
       return toBoard(screen.x, screen.y);
     }
 
+    // Typing into a text shouldn't add circles or lines.
+    const typing = (e: KeyboardEvent) => (e.target as HTMLElement | null)?.isContentEditable;
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
       const key = e.key.toLowerCase();
       if (key === "b") {
         const at = cursorOnBoard();
-        setCircles((cs) => [...cs, { id: nextId.current++, x: at.x, y: at.y }]);
+        setCircles((cs) => [...cs, { id: nextId.current++, x: at.x, y: at.y, size: CIRCLE_SIZE }]);
       } else if (key === "n" && !draftRef.current) {
         const at = cursorOnBoard();
         setDraft({ from: at, to: at });
@@ -167,58 +225,123 @@ export function Board() {
     const at = toBoard(e.clientX, e.clientY);
     const dx = at.x - d.start.x;
     const dy = at.y - d.start.y;
-    if (d.kind === "circle") {
-      const o = d.orig as Circle;
-      setCircles((cs) => cs.map((c) => (c.id === d.id ? { ...c, x: o.x + dx, y: o.y + dy } : c)));
+
+    if (d.kind === "circle" || d.kind === "text") {
+      const o = d.orig as Point;
+      const move = <T extends { id: number; x: number; y: number }>(items: T[]) =>
+        items.map((it) => (it.id === d.id ? { ...it, x: o.x + dx, y: o.y + dy } : it));
+      if (d.kind === "circle") setCircles(move);
+      else setTexts(move);
       return;
     }
+
     const o = d.orig as Line; // ends already resolved to positions
     const move = (pt: Point) => ({ x: pt.x + dx, y: pt.y + dy });
     let next: Line;
     if (d.kind === "line") {
-      // Moving the whole line takes it off any circles it was attached to.
+      // Moving the whole line takes it off anything it was attached to.
       next = { id: o.id, from: move(o.from), to: move(o.to) };
     } else {
       const end = d.kind;
       const pos = move(o[end]);
-      const reach = SIZE / 2 + ATTACH_DISTANCE / viewRef.current.scale;
+      const scale = viewRef.current.scale;
       const near = circles
         .map((c) => ({ c, dist: Math.hypot(c.x - pos.x, c.y - pos.y) }))
-        .filter(({ dist }) => dist <= reach)
+        .filter(({ c, dist }) => dist <= c.size / 2 + ATTACH_DISTANCE / scale)
         .sort((a, b) => a.dist - b.dist)[0]?.c;
-      next = { ...o, [end]: near ? { x: near.x, y: near.y } : pos, [`${end}Circle`]: near?.id };
+      next = { ...o, [end]: near ? { x: near.x, y: near.y } : pos, [`${end}Item`]: near?.id };
     }
     setLines((ls) => ls.map((l) => (l.id === d.id ? next : l)));
   }
 
-  function startDrag(e: React.PointerEvent, kind: "circle" | "line" | "from" | "to", item: Circle | Line) {
+  function startDrag(e: React.PointerEvent, kind: DragKind, id: number) {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
+    const line = lines.find((l) => l.id === id);
+    const orig = kind === "circle" || kind === "text" ? itemPos(id)! : resolve(line!);
     drag.current = {
       kind,
-      id: item.id,
+      id,
       start: toBoard(e.clientX, e.clientY),
-      orig: kind === "circle" ? item : resolve(item as Line),
+      orig,
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
     };
-    if (kind !== "circle") setMenuFor(null);
-    if (kind === "circle") setSelectedLine(null);
+    // Only one thing is selected at a time.
+    if (kind === "circle" || kind === "text") setSelectedLine(null);
+    else setSelected(null);
   }
 
   function onPointerUp() {
     const d = drag.current;
     drag.current = null;
     if (!d || d.moved) return;
-    // A click without moving: circles toggle their menu, lines show their end dots.
-    if (d.kind === "circle") setMenuFor((open) => (open === d.id ? null : d.id));
+    // A click without moving selects: circles and texts open their menu,
+    // lines show their end dots.
+    if (d.kind === "circle" || d.kind === "text") {
+      const kind = d.kind;
+      setSelected((s) => (s?.kind === kind && s.id === d.id ? null : { kind, id: d.id }));
+    }
     if (d.kind === "line") setSelectedLine(d.id);
   }
 
-  const menuCircle = circles.find((c) => c.id === menuFor);
+  // The circle menu's "Text": swap the circle for an empty text in the same
+  // place (same id, so attached lines stay attached) and start typing.
+  function circleToText(c: Circle) {
+    setCircles((cs) => cs.filter((x) => x.id !== c.id));
+    setTexts((ts) => [
+      ...ts,
+      { id: c.id, x: c.x, y: c.y, text: "", fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false },
+    ]);
+    setSelected(null);
+    setEditing(c.id);
+  }
+
+  function confirmText(id: number, value: string) {
+    setEditing(null);
+    const text = value.replace(/\n/g, " ").trim();
+    if (text) {
+      setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, text } : t)));
+      return;
+    }
+    // An empty text would be invisible, so drop it. Lines attached to it stay
+    // where they are.
+    const pos = itemPos(id);
+    setTexts((ts) => ts.filter((t) => t.id !== id));
+    if (pos) {
+      setLines((ls) =>
+        ls.map((l) => ({
+          ...l,
+          ...(l.fromItem === id && { from: pos, fromItem: undefined }),
+          ...(l.toItem === id && { to: pos, toItem: undefined }),
+        })),
+      );
+    }
+  }
+
+  function updateText(id: number, patch: Partial<Text>) {
+    setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }
+
   // Fade the dots out when zoomed far out so they don't turn into a grey haze.
-  const dotAlpha = 0.12 * Math.min(1, Math.max(0, (view.scale - 0.2) / 0.3));
+  const dotAlpha = 0.12 * clamp((view.scale - 0.2) / 0.3, 0, 1);
+  const menuCircle = selected?.kind === "circle" ? circles.find((c) => c.id === selected.id) : undefined;
+  const lineEnd = (l: Line, end: End) => (
+    <circle
+      key={end}
+      data-line-end={end}
+      data-attached={l[`${end}Item`] !== undefined ? "yes" : "no"}
+      cx={l[end].x}
+      cy={l[end].y}
+      r={6 / view.scale}
+      fill="white"
+      stroke="#1c1917"
+      strokeWidth={1.5 / view.scale}
+      className="pointer-events-auto cursor-move"
+      onPointerDown={(e) => startDrag(e, end, l.id)}
+    />
+  );
 
   return (
     <div
@@ -227,9 +350,9 @@ export function Board() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => (drag.current = null)}
-      // Clicking empty board closes the menu and hides a line's end dots.
+      // Clicking empty board deselects everything.
       onPointerDown={() => {
-        setMenuFor(null);
+        setSelected(null);
         setSelectedLine(null);
       }}
     >
@@ -255,7 +378,7 @@ export function Board() {
           width={BOARD_W}
           height={BOARD_H}
         >
-          {lines.map((raw) => resolve(raw)).map((l) => (
+          {lines.map(resolve).map((l) => (
             <g key={l.id}>
               <line
                 data-line="line"
@@ -278,7 +401,7 @@ export function Board() {
                 strokeWidth={14 / view.scale}
                 className="cursor-grab active:cursor-grabbing"
                 style={{ pointerEvents: "stroke" }}
-                onPointerDown={(e) => startDrag(e, "line", lines.find((x) => x.id === l.id)!)}
+                onPointerDown={(e) => startDrag(e, "line", l.id)}
               />
             </g>
           ))}
@@ -299,12 +422,88 @@ export function Board() {
         {circles.map((c) => (
           <div
             key={c.id}
-            onPointerDown={(e) => startDrag(e, "circle", c)}
+            data-circle={c.id}
+            onPointerDown={(e) => startDrag(e, "circle", c.id)}
             className="absolute cursor-grab rounded-full border-2 border-stone-900 bg-white active:cursor-grabbing"
-            style={{ width: SIZE, height: SIZE, left: c.x - SIZE / 2, top: c.y - SIZE / 2 }}
+            style={{ width: c.size, height: c.size, left: c.x - c.size / 2, top: c.y - c.size / 2 }}
           />
         ))}
 
+        {texts.map((t) => {
+          const isEditing = editing === t.id;
+          const isSelected = selected?.kind === "text" && selected.id === t.id;
+          const style = {
+            fontSize: t.fontSize,
+            color: t.color,
+            fontWeight: t.bold ? 700 : 400,
+            lineHeight: 1.2,
+          };
+          return (
+            <div
+              key={t.id}
+              className="absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: t.x, top: t.y }}
+            >
+              {isEditing ? (
+                <TextEditor
+                  initial={t.text}
+                  style={style}
+                  onConfirm={(value) => confirmText(t.id, value)}
+                />
+              ) : (
+                <div
+                  data-text={t.id}
+                  onPointerDown={(e) => startDrag(e, "text", t.id)}
+                  onDoubleClick={() => {
+                    setSelected(null);
+                    setEditing(t.id);
+                  }}
+                  className="cursor-grab whitespace-pre bg-white px-1 active:cursor-grabbing"
+                  style={style}
+                >
+                  {t.text}
+                </div>
+              )}
+
+              {sizeShownFor === t.id && (
+                <div
+                  data-size-label
+                  className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-stone-900 px-1.5 py-0.5 text-white"
+                  style={{ bottom: "100%", marginBottom: 6 / view.scale, fontSize: 12 / view.scale }}
+                >
+                  {Math.round(t.fontSize)}px
+                </div>
+              )}
+
+              {isSelected && (
+                <div
+                  data-menu="text"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="absolute left-full top-0 flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
+                  style={{ marginLeft: 8 }}
+                >
+                  <div className="flex gap-1.5">
+                    {TEXT_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        aria-label={`Colour ${color}`}
+                        onClick={() => updateText(t.id, { color })}
+                        className={`size-5 rounded-full ${t.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                        style={{ background: color }}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => updateText(t.id, { bold: !t.bold })}
+                    className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                  >
+                    Bold
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {/* End dots sit above circles so an attached end can still be grabbed. */}
         <svg
@@ -313,36 +512,75 @@ export function Board() {
           height={BOARD_H}
         >
           {lines
-            .filter((raw) => raw.id === selectedLine)
-            .map((raw) => resolve(raw))
-            .map((l) =>
-              (["from", "to"] as const).map((end) => (
-                <circle
-                  key={end}
-                  data-line-end={end}
-                  data-attached={l[`${end}Circle`] !== undefined ? "yes" : "no"}
-                  cx={l[end].x}
-                  cy={l[end].y}
-                  r={6 / view.scale}
-                  fill="white"
-                  stroke="#1c1917"
-                  strokeWidth={1.5 / view.scale}
-                  className="pointer-events-auto cursor-move"
-                  onPointerDown={(e) => startDrag(e, end, lines.find((x) => x.id === l.id)!)}
-                />
-              )),
-            )}
+            .filter((l) => l.id === selectedLine)
+            .map(resolve)
+            .map((l) => (
+              <g key={l.id}>{(["from", "to"] as const).map((end) => lineEnd(l, end))}</g>
+            ))}
         </svg>
 
         {menuCircle && (
           <div
-            data-menu
+            data-menu="circle"
             onPointerDown={(e) => e.stopPropagation()}
-            className="absolute min-h-24 w-40 rounded-lg border border-stone-200 bg-white shadow-lg"
-            style={{ left: menuCircle.x + SIZE / 2 + 8, top: menuCircle.y - SIZE / 2 }}
-          />
+            className="absolute min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+            style={{ left: menuCircle.x + menuCircle.size / 2 + 8, top: menuCircle.y - menuCircle.size / 2 }}
+          >
+            <button
+              onClick={() => circleToText(menuCircle)}
+              className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+            >
+              Text
+            </button>
+          </div>
         )}
       </div>
     </div>
+  );
+}
+
+// The text being typed. Enter or clicking elsewhere confirms it.
+function TextEditor({
+  initial,
+  style,
+  onConfirm,
+}: {
+  initial: string;
+  style: React.CSSProperties;
+  onConfirm: (value: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current!;
+    el.textContent = initial;
+    el.focus();
+    // Put the cursor at the end.
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    // Only on mount: the text is typed into the element directly.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div
+      ref={ref}
+      data-text-editor
+      contentEditable
+      suppressContentEditableWarning
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          ref.current?.blur();
+        }
+      }}
+      onBlur={(e) => onConfirm(e.currentTarget.textContent ?? "")}
+      className="min-w-[1ch] cursor-text whitespace-pre bg-white px-1 outline-none"
+      style={{ ...style, userSelect: "text", caretColor: style.color }}
+    />
   );
 }
