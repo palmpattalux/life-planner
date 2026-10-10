@@ -1,16 +1,11 @@
 # Life Planner
 
-A visual, vertical timeline of the phases of your life, with the goals and
-events that belong to each one. It answers one question fast:
-**"In this phase of my life, what should I be doing?"**
+A simple white board, like Miro. Log in from any device.
 
-Plan once, then come back for a quick look and get back on track.
+- Press **b** to add a circle at the cursor.
+- Drag a circle to move it anywhere.
 
-- **Now**: opens on the phase you're in today, what it's about, your top goals and what's coming up.
-- **Timeline**: every phase on one vertical line, past at the top, future at the bottom. Add, edit and tick off goals and events.
-- Log in from any device. Your data is private to your account.
-
-Built with Next.js, TypeScript, Tailwind CSS and Supabase. Deployed on Vercel.
+Built with Next.js, TypeScript, Tailwind CSS and Supabase (login). Deployed on Vercel.
 
 ## Setup
 
@@ -56,9 +51,6 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 
 | Path | What it does |
 | --- | --- |
-| `src/app/page.tsx` | The **Now** screen |
-| `src/app/timeline/page.tsx` | The vertical timeline board |
-| `src/app/login/` | Log in and sign up |
-| `src/app/actions.ts` | Saving, editing and deleting phases and items |
+| `src/components/Board.tsx` | The white board |
+| `src/app/login/` | Log in and create account |
 | `src/middleware.ts` | Keeps you logged in and protects every page |
-| `supabase/schema.sql` | Database tables and privacy rules |
