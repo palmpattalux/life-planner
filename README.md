@@ -8,6 +8,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it.
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.
 - Click a line and choose **Time**, then Day, Week, Month or Year, and enter a beginning and end. The line becomes a timeline, like a ruler with dates.
+- Click anything and press **Backspace** to delete it. **Ctrl+Z** (or Cmd+Z) brings it back.
 - Drop a line end near a circle and it attaches: moving the circle moves that end. Drag the end away to detach it.
 - Drag a circle to move it anywhere.
 - Click a circle or text to select it and open its menu. While selected, the scroll wheel or trackpad resizes it instead of the board (text shows its px size). Click the board to deselect.

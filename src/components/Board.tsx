@@ -30,6 +30,12 @@ type Line = {
 };
 type End = "from" | "to";
 type Selected = { kind: "circle" | "text"; id: number };
+// What Backspace removed, so Ctrl+Z can put it back. For circles and texts,
+// `detached` lists the line ends that were attached to them.
+type Deleted =
+  | { kind: "circle"; item: Circle; detached: { lineId: number; end: End }[] }
+  | { kind: "text"; item: Text; detached: { lineId: number; end: End }[] }
+  | { kind: "line"; item: Line };
 type DragKind = "circle" | "text" | "line" | End;
 
 const CIRCLE_SIZE = 64;
@@ -79,6 +85,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 // - Click a line to show dots on its ends; drag them to move each end. Drop an
 //   end near a circle and it attaches, following it when it moves. The line's
 //   menu has "Time", which turns it into a timeline (see LineMenu).
+// - Backspace deletes whatever is selected; Ctrl+Z / Cmd+Z brings it back.
 export function Board() {
   const [circles, setCircles] = useState<Circle[]>([]);
   const [texts, setTexts] = useState<Text[]>([]);
@@ -101,6 +108,11 @@ export function Board() {
   viewRef.current = view;
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  const selectedLineRef = useRef(selectedLine);
+  selectedLineRef.current = selectedLine;
+  const itemsRef = useRef({ circles, texts, lines });
+  itemsRef.current = { circles, texts, lines };
+  const deletedStack = useRef<Deleted[]>([]);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const pointer = useRef<Point | null>(null);
@@ -201,8 +213,64 @@ export function Board() {
       return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
     };
 
+    // Backspace / Delete removes whatever is selected.
+    function deleteSelected() {
+      const { circles, texts, lines } = itemsRef.current;
+      const sel = selectedRef.current;
+      const lineId = selectedLineRef.current;
+      if (sel) {
+        const item = sel.kind === "circle" ? circles.find((c) => c.id === sel.id) : texts.find((t) => t.id === sel.id);
+        if (!item) return;
+        const detached = detachLinesFrom(item);
+        if (sel.kind === "circle") {
+          setCircles((cs) => cs.filter((c) => c.id !== sel.id));
+          deletedStack.current.push({ kind: "circle", item: item as Circle, detached });
+        } else {
+          setTexts((ts) => ts.filter((t) => t.id !== sel.id));
+          deletedStack.current.push({ kind: "text", item: item as Text, detached });
+        }
+        setSelected(null);
+      } else if (lineId !== null) {
+        const line = lines.find((l) => l.id === lineId);
+        if (!line) return;
+        setLines((ls) => ls.filter((l) => l.id !== lineId));
+        deletedStack.current.push({ kind: "line", item: line });
+        setSelectedLine(null);
+      }
+    }
+
+    // Ctrl+Z (or Cmd+Z) brings back the last thing deleted.
+    function undoDelete() {
+      const d = deletedStack.current.pop();
+      if (!d) return;
+      if (d.kind === "line") {
+        setLines((ls) => [...ls, d.item]);
+        return;
+      }
+      if (d.kind === "circle") setCircles((cs) => [...cs, d.item]);
+      else setTexts((ts) => [...ts, d.item]);
+      // Re-attach the line ends that were attached before.
+      setLines((ls) =>
+        ls.map((l) => {
+          const ends = d.detached.filter((x) => x.lineId === l.id).map((x) => x.end);
+          return ends.reduce((acc, end) => ({ ...acc, [`${end}Item`]: d.item.id }), l);
+        }),
+      );
+    }
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
+      if (typing(e)) return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undoDelete();
+        return;
+      }
+      if (e.key === "Backspace" || e.key === "Delete") {
+        e.preventDefault();
+        deleteSelected();
+        return;
+      }
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === "b") {
         const at = cursorOnBoard();
@@ -317,6 +385,25 @@ export function Board() {
     setEditing(c.id);
   }
 
+  // Pin every line end attached to this item where it is now, and say which
+  // ends those were.
+  function detachLinesFrom(item: { id: number; x: number; y: number }) {
+    const pos = { x: item.x, y: item.y };
+    const detached: { lineId: number; end: End }[] = [];
+    for (const l of itemsRef.current.lines) {
+      if (l.fromItem === item.id) detached.push({ lineId: l.id, end: "from" });
+      if (l.toItem === item.id) detached.push({ lineId: l.id, end: "to" });
+    }
+    setLines((ls) =>
+      ls.map((l) => ({
+        ...l,
+        ...(l.fromItem === item.id && { from: pos, fromItem: undefined }),
+        ...(l.toItem === item.id && { to: pos, toItem: undefined }),
+      })),
+    );
+    return detached;
+  }
+
   function confirmText(id: number, value: string) {
     setEditing(null);
     const text = value.replace(/\n/g, " ").trim();
@@ -326,17 +413,9 @@ export function Board() {
     }
     // An empty text would be invisible, so drop it. Lines attached to it stay
     // where they are.
-    const pos = itemPos(id);
+    const item = texts.find((t) => t.id === id);
     setTexts((ts) => ts.filter((t) => t.id !== id));
-    if (pos) {
-      setLines((ls) =>
-        ls.map((l) => ({
-          ...l,
-          ...(l.fromItem === id && { from: pos, fromItem: undefined }),
-          ...(l.toItem === id && { to: pos, toItem: undefined }),
-        })),
-      );
-    }
+    if (item) detachLinesFrom(item);
   }
 
   function updateText(id: number, patch: Partial<Text>) {
