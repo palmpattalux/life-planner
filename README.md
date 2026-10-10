@@ -1,7 +1,8 @@
 # Life Planner
 
-A simple white board, like Miro. Log in from any device.
+A huge white board, like Miro, with faint grey dots and a light grey line at its edge. Log in from any device.
 
+- Scroll wheel or trackpad zooms in and out.
 - Press **b** to add a circle at the cursor.
 - Drag a circle to move it anywhere.
 - Click a circle to open its menu beside it (empty for now). Click the board to close it.
