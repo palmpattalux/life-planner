@@ -30,7 +30,8 @@ function isTrackpadSwipe(e: WheelEvent) {
 // A huge white board with faint grey dots and a light grey edge.
 // Two-finger swipe moves around; pinch or mouse wheel zooms. Press "b" to add a circle at the cursor.
 // Hold "n" to draw a line from the cursor; let go to confirm it.
-// Drag a circle to move it; click it to open its menu.
+// Drag a circle or line to move it. Click a circle to open its menu; click a
+// line to show dots on its ends, which can be dragged to move each end.
 export function Board() {
   const [circles, setCircles] = useState<Circle[]>([]);
   const [menuFor, setMenuFor] = useState<number | null>(null);
@@ -45,10 +46,13 @@ export function Board() {
   viewRef.current = view;
   const rootRef = useRef<HTMLDivElement>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
+  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+  // What is being dragged: a circle, a whole line, or one end of a line.
   const drag = useRef<{
+    kind: "circle" | "line" | "from" | "to";
     id: number;
-    dx: number;
-    dy: number;
+    start: Point; // board position where the drag began
+    orig: Circle | Line; // the item as it was when the drag began
     startX: number;
     startY: number;
     moved: boolean;
@@ -145,27 +149,47 @@ export function Board() {
     if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < CLICK_SLOP) return;
     d.moved = true;
     const at = toBoard(e.clientX, e.clientY);
-    setCircles((cs) => cs.map((c) => (c.id === d.id ? { ...c, x: at.x - d.dx, y: at.y - d.dy } : c)));
+    const dx = at.x - d.start.x;
+    const dy = at.y - d.start.y;
+    if (d.kind === "circle") {
+      const o = d.orig as Circle;
+      setCircles((cs) => cs.map((c) => (c.id === d.id ? { ...c, x: o.x + dx, y: o.y + dy } : c)));
+      return;
+    }
+    const o = d.orig as Line;
+    const move = (pt: Point) => ({ x: pt.x + dx, y: pt.y + dy });
+    const next: Line =
+      d.kind === "line"
+        ? { ...o, from: move(o.from), to: move(o.to) }
+        : d.kind === "from"
+          ? { ...o, from: move(o.from) }
+          : { ...o, to: move(o.to) };
+    setLines((ls) => ls.map((l) => (l.id === d.id ? next : l)));
   }
 
-  function onCirclePointerDown(e: React.PointerEvent, c: Circle) {
+  function startDrag(e: React.PointerEvent, kind: "circle" | "line" | "from" | "to", item: Circle | Line) {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    const at = toBoard(e.clientX, e.clientY);
     drag.current = {
-      id: c.id,
-      dx: at.x - c.x,
-      dy: at.y - c.y,
+      kind,
+      id: item.id,
+      start: toBoard(e.clientX, e.clientY),
+      orig: item,
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
     };
+    if (kind !== "circle") setMenuFor(null);
+    if (kind === "circle") setSelectedLine(null);
   }
 
   function onPointerUp() {
     const d = drag.current;
     drag.current = null;
-    if (d && !d.moved) setMenuFor((open) => (open === d.id ? null : d.id));
+    if (!d || d.moved) return;
+    // A click without moving: circles toggle their menu, lines show their end dots.
+    if (d.kind === "circle") setMenuFor((open) => (open === d.id ? null : d.id));
+    if (d.kind === "line") setSelectedLine(d.id);
   }
 
   const menuCircle = circles.find((c) => c.id === menuFor);
@@ -179,8 +203,11 @@ export function Board() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => (drag.current = null)}
-      // Clicking empty board closes the menu.
-      onPointerDown={() => setMenuFor(null)}
+      // Clicking empty board closes the menu and hides a line's end dots.
+      onPointerDown={() => {
+        setMenuFor(null);
+        setSelectedLine(null);
+      }}
     >
       <div
         className="absolute left-0 top-0 origin-top-left"
@@ -204,25 +231,66 @@ export function Board() {
           width={BOARD_W}
           height={BOARD_H}
         >
-          {[...lines, ...(draft ? [{ id: -1, ...draft }] : [])].map((l) => (
+          {lines.map((l) => (
+            <g key={l.id}>
+              <line
+                data-line="line"
+                x1={l.from.x}
+                y1={l.from.y}
+                x2={l.to.x}
+                y2={l.to.y}
+                stroke="#1c1917"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+              {/* Wider invisible stroke so the line is easy to grab. */}
+              <line
+                data-line-hit={l.id}
+                x1={l.from.x}
+                y1={l.from.y}
+                x2={l.to.x}
+                y2={l.to.y}
+                stroke="transparent"
+                strokeWidth={14 / view.scale}
+                className="cursor-grab active:cursor-grabbing"
+                style={{ pointerEvents: "stroke" }}
+                onPointerDown={(e) => startDrag(e, "line", l)}
+              />
+              {selectedLine === l.id &&
+                (["from", "to"] as const).map((end) => (
+                  <circle
+                    key={end}
+                    data-line-end={end}
+                    cx={l[end].x}
+                    cy={l[end].y}
+                    r={6 / view.scale}
+                    fill="white"
+                    stroke="#1c1917"
+                    strokeWidth={1.5 / view.scale}
+                    className="pointer-events-auto cursor-move"
+                    onPointerDown={(e) => startDrag(e, end, l)}
+                  />
+                ))}
+            </g>
+          ))}
+          {draft && (
             <line
-              key={l.id}
-              data-line={l.id === -1 ? "draft" : "line"}
-              x1={l.from.x}
-              y1={l.from.y}
-              x2={l.to.x}
-              y2={l.to.y}
+              data-line="draft"
+              x1={draft.from.x}
+              y1={draft.from.y}
+              x2={draft.to.x}
+              y2={draft.to.y}
               stroke="#1c1917"
               strokeWidth={2}
               strokeLinecap="round"
             />
-          ))}
+          )}
         </svg>
 
         {circles.map((c) => (
           <div
             key={c.id}
-            onPointerDown={(e) => onCirclePointerDown(e, c)}
+            onPointerDown={(e) => startDrag(e, "circle", c)}
             className="absolute cursor-grab rounded-full border-2 border-stone-900 bg-white active:cursor-grabbing"
             style={{ width: SIZE, height: SIZE, left: c.x - SIZE / 2, top: c.y - SIZE / 2 }}
           />
