@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { LinkButton } from "./icons";
 import { timelineTicks, todayValue, type Timeline, type TimeUnit } from "./timeline";
 
 const UNITS: { unit: TimeUnit; label: string }[] = [
@@ -27,7 +28,8 @@ const PLACEHOLDER: Record<TimeUnit, string> = {
 
 // The box that pops up beside a clicked line.
 // "Time" -> pick a unit -> enter beginning and end -> Done turns the line into
-// a timeline. "Angle" adds a bend point to the line.
+// a timeline. "Angle" adds a bend point to the line. The chain icon is for
+// links later on.
 export function LineMenu({
   time,
   onDone,
@@ -72,6 +74,7 @@ export function LineMenu({
             </svg>
             Angle
           </button>
+          <LinkButton />
         </>
       )}
 

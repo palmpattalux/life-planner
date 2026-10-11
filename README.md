@@ -16,10 +16,12 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - With several things selected, click **Group** beside the selection box. Grouped things are selected and moved together; click **Ungroup** to split them again.
 - With several things selected, the **Preset** button in the top right remembers them as a preset (adding presets back to the board comes later).
 - Click something (or select several) and press **Ctrl+C** (Cmd+C) to copy, then **Ctrl+V** (Cmd+V) to paste a copy at the cursor.
-- Drop a line end near a circle and it attaches: moving the circle moves that end. Drag the end away to detach it.
+- Drop a line end near a circle or text and it attaches: moving the circle or text moves that end. Drag the end away to detach it.
 - Drag a circle to move it anywhere.
 - Click a circle or text to select it and open its menu. While selected, the scroll wheel or trackpad resizes it instead of the board (text shows its px size). Click the board to deselect.
-- The circle menu's **Text** turns the circle into text, ready to type. Enter or clicking elsewhere confirms. The text menu changes colour and bold. Double-click text to edit it.
+- The circle menu's **Text** turns the circle into text, ready to type. Enter starts a new line; clicking elsewhere confirms. The text menu changes colour and bold. Double-click text to edit it.
+- The circle menu's **Square** turns the circle into a square outline. Only the outline can be clicked or dragged, not the space inside. Its menu changes its colour and has **Text**, which adds a label on the outside of its top left corner in the same colour. It resizes like a circle.
+- Every menu has a chain icon (**Link**). It will link to other notes, pages or websites later; for now it does nothing.
 
 Built with Next.js, TypeScript, Tailwind CSS and Supabase (login). Deployed on Vercel.
 

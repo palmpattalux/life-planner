@@ -14,6 +14,7 @@ import {
   type Box,
   type Point,
 } from "./geometry";
+import { LinkButton, SquareIcon } from "./icons";
 import { LineMenu } from "./LineMenu";
 import { timelineTicks, type Timeline } from "./timeline";
 
@@ -21,6 +22,9 @@ type View = { x: number; y: number; scale: number };
 // `group`: things grouped together share a group number and are selected
 // and moved as one.
 type Circle = { id: number; x: number; y: number; size: number; group?: number };
+// A square outline (made from a circle). Only its outline can be clicked.
+// `label` is the text at its outer top left, in the square's colour.
+type Square = { id: number; x: number; y: number; size: number; color: string; label?: string; group?: number };
 type Text = {
   id: number;
   x: number; // centre
@@ -50,8 +54,8 @@ type Line = {
 type End = "from" | "to";
 // Everything on the board. Kept as one object so every change can be undone
 // (and, later, saved) in one piece.
-type BoardData = { circles: Circle[]; texts: Text[]; lines: Line[] };
-type Kind = "circle" | "text" | "line";
+type BoardData = { circles: Circle[]; squares: Square[]; texts: Text[]; lines: Line[] };
+type Kind = "circle" | "square" | "text" | "line";
 // Selected things, as "circle:3", "text:7", "line:2".
 type Key = `${Kind}:${number}`;
 // "selection": pressing inside the selection box, on empty board.
@@ -96,8 +100,17 @@ function isTrackpadSwipe(e: WheelEvent) {
   return !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 50;
 }
 
+// Square labels grow and shrink with their square.
+const squareLabelSize = (size: number) => Math.max(8, size / 4);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const keyOf = (kind: Kind, id: number): Key => `${kind}:${id}`;
+// Every thing on the board, as keys.
+const allKeys = (d: BoardData): Key[] => [
+  ...d.circles.map((c) => keyOf("circle", c.id)),
+  ...d.squares.map((q) => keyOf("square", q.id)),
+  ...d.texts.map((t) => keyOf("text", t.id)),
+  ...d.lines.map((l) => keyOf("line", l.id)),
+];
 const idsOf = (sel: Key[], kind: Kind) =>
   new Set(sel.filter((k) => k.startsWith(kind + ":")).map((k) => Number(k.split(":")[1])));
 
@@ -110,22 +123,27 @@ const idsOf = (sel: Key[], kind: Kind) =>
 //   (scroll wheel / trackpad).
 // - Click a circle or text to select it and open its menu. While selected, the
 //   scroll wheel / trackpad resizes it instead of moving the board.
-// - The circle menu's "Text" turns the circle into text, ready to type. Enter or
-//   clicking elsewhere confirms. Double-click text to edit it again.
+// - The circle menu's "Text" turns the circle into text, ready to type. Enter
+//   starts a new line; clicking elsewhere confirms. Double-click to edit again.
+// - The circle menu's "Square" turns the circle into a square outline (only the
+//   outline is clickable) with a colour and a label at its outer top left.
 // - Click a line to show dots on its ends (drag to move each end), arrow
 //   buttons beside its ends (click to give that end an arrowhead) and its menu:
 //   "Time" turns it into a timeline, "Angle" adds a bend point you can drag.
-//   Drop an end near a circle and it attaches, following it when it moves.
+//   Drop an end near a circle or text and it attaches, following it when it moves.
 // - Backspace deletes whatever is selected; Ctrl+Z / Cmd+Z undoes any change.
 export function Board() {
-  const [board, setBoard] = useState<BoardData>({ circles: [], texts: [], lines: [] });
-  const { circles, texts, lines } = board;
+  const [board, setBoard] = useState<BoardData>({ circles: [], squares: [], texts: [], lines: [] });
+  const { circles, squares, texts, lines } = board;
   const setCircles = (f: (cs: Circle[]) => Circle[]) => setBoard((b) => ({ ...b, circles: f(b.circles) }));
+  const setSquares = (f: (qs: Square[]) => Square[]) => setBoard((b) => ({ ...b, squares: f(b.squares) }));
   const setTexts = (f: (ts: Text[]) => Text[]) => setBoard((b) => ({ ...b, texts: f(b.texts) }));
   const setLines = (f: (ls: Line[]) => Line[]) => setBoard((b) => ({ ...b, lines: f(b.lines) }));
 
   const [selection, setSelection] = useState<Key[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
+  // Which square's label is being typed.
+  const [editingLabel, setEditingLabel] = useState<number | null>(null);
   // Which text is showing its px size label while being resized.
   const [sizeShownFor, setSizeShownFor] = useState<number | null>(null);
   const sizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -189,7 +207,8 @@ export function Board() {
   }
 
   function itemPos(id: number | undefined, data: BoardData = board): Point | undefined {
-    const item = data.circles.find((c) => c.id === id) ?? data.texts.find((t) => t.id === id);
+    const item =
+      data.circles.find((c) => c.id === id) ?? data.texts.find((t) => t.id === id) ?? data.squares.find((q) => q.id === id);
     return item && { x: item.x, y: item.y };
   }
 
@@ -200,17 +219,27 @@ export function Board() {
 
   const pointsOf = (l: Line): Point[] => [l.from, ...(l.bends ?? []), l.to];
 
-  // For drawing: an end attached to a circle stops at the circle's edge, so an
+  // For drawing: an end attached to a circle or text stops at its edge, so an
   // arrowhead there is visible.
   function drawPoints(l: Line): Point[] {
     const pts = pointsOf(l);
     const trim = (end: End) => {
-      const c = circles.find((c) => c.id === l[`${end}Item`]);
-      if (!c) return;
+      const id = l[`${end}Item`];
+      if (id === undefined) return;
       const i = end === "from" ? 0 : pts.length - 1;
       const neighbour = pts[end === "from" ? 1 : pts.length - 2];
       const d = unit(pts[i], neighbour);
-      pts[i] = { x: pts[i].x + d.x * (c.size / 2), y: pts[i].y + d.y * (c.size / 2) };
+      const c = circles.find((c) => c.id === id);
+      const box = !c && texts.some((t) => t.id === id) ? boxOf(keyOf("text", id)) : null;
+      let by = 0;
+      if (c) by = c.size / 2;
+      else if (box) {
+        // Where the line leaves the text's box.
+        const hw = (box.maxX - box.minX) / 2;
+        const hh = (box.maxY - box.minY) / 2;
+        by = Math.min(d.x ? hw / Math.abs(d.x) : Infinity, d.y ? hh / Math.abs(d.y) : Infinity);
+      }
+      pts[i] = { x: pts[i].x + d.x * by, y: pts[i].y + d.y * by };
     };
     trim("from");
     trim("to");
@@ -224,6 +253,10 @@ export function Board() {
     if (kind === "circle") {
       const c = data.circles.find((c) => c.id === id);
       return c ? { minX: c.x - c.size / 2, minY: c.y - c.size / 2, maxX: c.x + c.size / 2, maxY: c.y + c.size / 2 } : null;
+    }
+    if (kind === "square") {
+      const q = data.squares.find((q) => q.id === id);
+      return q ? { minX: q.x - q.size / 2, minY: q.y - q.size / 2, maxX: q.x + q.size / 2, maxY: q.y + q.size / 2 } : null;
     }
     if (kind === "text") {
       const el = document.querySelector(`[data-text="${id}"]`);
@@ -249,6 +282,18 @@ export function Board() {
       const box = boxOf(key);
       return !!box && boxesTouch(box, area);
     }
+    if (kind === "square") {
+      // Only the outline counts, like clicking.
+      const b = boxOf(key);
+      if (!b) return false;
+      const c = [
+        { x: b.minX, y: b.minY },
+        { x: b.maxX, y: b.minY },
+        { x: b.maxX, y: b.maxY },
+        { x: b.minX, y: b.maxY },
+      ];
+      return c.some((p, i) => segmentTouchesBox(p, c[(i + 1) % 4], area));
+    }
     const l = lines.find((l) => l.id === id);
     if (!l) return false;
     const pts = pointsOf(resolve(l));
@@ -260,6 +305,7 @@ export function Board() {
     const all: [Key, number | undefined][] = [
       ...data.circles.map((c) => [keyOf("circle", c.id), c.group] as [Key, number | undefined]),
       ...data.texts.map((t) => [keyOf("text", t.id), t.group] as [Key, number | undefined]),
+      ...data.squares.map((q) => [keyOf("square", q.id), q.group] as [Key, number | undefined]),
       ...data.lines.map((l) => [keyOf("line", l.id), l.group] as [Key, number | undefined]),
     ];
     const groups = new Set(all.filter(([k, g]) => g !== undefined && keys.includes(k)).map(([, g]) => g));
@@ -271,10 +317,12 @@ export function Board() {
   function pickOut(keys: Key[], data: BoardData): BoardData {
     const cIds = idsOf(keys, "circle");
     const tIds = idsOf(keys, "text");
+    const sIds = idsOf(keys, "square");
     const lIds = idsOf(keys, "line");
-    const kept = (id?: number) => (id !== undefined && (cIds.has(id) || tIds.has(id)) ? id : undefined);
+    const kept = (id?: number) => (id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id)) ? id : undefined);
     return structuredClone({
       circles: data.circles.filter((c) => cIds.has(c.id)),
+      squares: data.squares.filter((q) => sIds.has(q.id)),
       texts: data.texts.filter((t) => tIds.has(t.id)),
       lines: data.lines
         .filter((l) => lIds.has(l.id))
@@ -287,11 +335,13 @@ export function Board() {
     const sel = selectionRef.current;
     const cIds = idsOf(sel, "circle");
     const tIds = idsOf(sel, "text");
+    const sIds = idsOf(sel, "square");
     const lIds = idsOf(sel, "line");
     const group = isGroup ? undefined : nextId.current++;
     commit();
     setBoard((b) => ({
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, group } : c)),
+      squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, group } : q)),
       texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, group } : t)),
       lines: b.lines.map((l) => (lIds.has(l.id) ? { ...l, group } : l)),
     }));
@@ -374,12 +424,15 @@ export function Board() {
     const single = sel.length === 1;
     // Clamp the factor so no circle or text goes past its size limits.
     let f = k;
+    const sIds = idsOf(sel, "square");
     for (const c of data.circles) if (cIds.has(c.id)) f = clamp(c.size * f, MIN_CIRCLE, MAX_CIRCLE) / c.size;
+    for (const q of data.squares) if (sIds.has(q.id)) f = clamp(q.size * f, MIN_CIRCLE, MAX_CIRCLE) / q.size;
     for (const t of data.texts) if (tIds.has(t.id)) f = clamp(t.fontSize * f, MIN_TEXT, MAX_TEXT) / t.fontSize;
     const scalePt = (p: Point) => (single ? p : { x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f });
 
     setBoard((b) => ({
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, ...scalePt(c), size: c.size * f } : c)),
+      squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, ...scalePt(q), size: q.size * f } : q)),
       texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, ...scalePt(t), fontSize: t.fontSize * f } : t)),
       lines: b.lines.map((l) =>
         lIds.has(l.id)
@@ -405,11 +458,13 @@ export function Board() {
   function removeKeys(keys: Key[]) {
     const cIds = idsOf(keys, "circle");
     const tIds = idsOf(keys, "text");
+    const sIds = idsOf(keys, "square");
     const lIds = idsOf(keys, "line");
     setBoard((b) => {
-      const gone = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id));
+      const gone = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
       return {
         circles: b.circles.filter((c) => !cIds.has(c.id)),
+        squares: b.squares.filter((q) => !sIds.has(q.id)),
         texts: b.texts.filter((t) => !tIds.has(t.id)),
         lines: b.lines
           .filter((l) => !lIds.has(l.id))
@@ -444,6 +499,7 @@ export function Board() {
     function paste(items: BoardData, at: Point) {
       const pts = [
         ...items.circles,
+        ...items.squares,
         ...items.texts,
         ...items.lines.flatMap((l) => pointsOf(l)),
       ];
@@ -464,6 +520,7 @@ export function Board() {
       };
       const copy = structuredClone(items);
       const circles = copy.circles.map((c) => ({ ...c, ...move(c), id: newId(c.id), group: newGroup(c.group) }));
+      const squares = copy.squares.map((q) => ({ ...q, ...move(q), id: newId(q.id), group: newGroup(q.group) }));
       const texts = copy.texts.map((t) => ({ ...t, ...move(t), id: newId(t.id), group: newGroup(t.group) }));
       const lines = copy.lines.map((l) => ({
         ...l,
@@ -478,15 +535,13 @@ export function Board() {
       commit();
       setBoard((b) => ({
         circles: [...b.circles, ...circles],
+        squares: [...b.squares, ...squares],
         texts: [...b.texts, ...texts],
         lines: [...b.lines, ...lines],
       }));
-      setSelection([
-        ...circles.map((c) => keyOf("circle", c.id)),
-        ...texts.map((t) => keyOf("text", t.id)),
-        ...lines.map((l) => keyOf("line", l.id)),
-      ]);
+      setSelection(allKeys({ circles, squares, texts, lines }));
       setEditing(null);
+      setEditingLabel(null);
     }
 
     function undo() {
@@ -494,13 +549,10 @@ export function Board() {
       if (!prev) return;
       setBoard(prev);
       // Keep selected whatever still exists, so its menu stays open.
-      const exists = new Set<Key>([
-        ...prev.circles.map((c) => keyOf("circle", c.id)),
-        ...prev.texts.map((t) => keyOf("text", t.id)),
-        ...prev.lines.map((l) => keyOf("line", l.id)),
-      ]);
+      const exists = new Set<Key>(allKeys(prev));
       setSelection((s) => s.filter((k) => exists.has(k)));
       setEditing(null);
+      setEditingLabel(null);
     }
 
     function onKeyDown(e: KeyboardEvent) {
@@ -589,10 +641,12 @@ export function Board() {
     if (d.many) {
       const cIds = idsOf(d.many, "circle");
       const tIds = idsOf(d.many, "text");
+      const sIds = idsOf(d.many, "square");
       const lIds = idsOf(d.many, "line");
-      const movesWithItem = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id));
+      const movesWithItem = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
       setBoard({
         circles: o.circles.map((c) => (cIds.has(c.id) ? { ...c, ...move(c) } : c)),
+        squares: o.squares.map((q) => (sIds.has(q.id) ? { ...q, ...move(q) } : q)),
         texts: o.texts.map((t) => (tIds.has(t.id) ? { ...t, ...move(t) } : t)),
         lines: o.lines.map((l) => {
           if (!lIds.has(l.id)) return l;
@@ -611,12 +665,14 @@ export function Board() {
       return;
     }
 
-    if (d.kind === "circle" || d.kind === "text") {
-      const list = d.kind === "circle" ? o.circles : o.texts;
+    if (d.kind === "circle" || d.kind === "text" || d.kind === "square") {
+      const list: { id: number; x: number; y: number }[] =
+        d.kind === "circle" ? o.circles : d.kind === "square" ? o.squares : o.texts;
       const it = list.find((x) => x.id === d.id)!;
       const moveOne = <T extends { id: number; x: number; y: number }>(items: T[]) =>
         items.map((x) => (x.id === d.id ? { ...x, x: it.x + dx, y: it.y + dy } : x));
       if (d.kind === "circle") setCircles(moveOne);
+      else if (d.kind === "square") setSquares(moveOne);
       else setTexts(moveOne);
       return;
     }
@@ -642,10 +698,20 @@ export function Board() {
       const end = d.kind;
       const pos = move(line[end]);
       const scale = viewRef.current.scale;
-      const near = o.circles
-        .map((c) => ({ c, dist: Math.hypot(c.x - pos.x, c.y - pos.y) }))
-        .filter(({ c, dist }) => dist <= c.size / 2 + ATTACH_DISTANCE / scale)
-        .sort((a, b) => a.dist - b.dist)[0]?.c;
+      // Nearest circle or text within reach (distance from its edge).
+      const reach = ATTACH_DISTANCE / scale;
+      const near = [
+        ...o.circles.map((c) => ({ c, gap: Math.hypot(c.x - pos.x, c.y - pos.y) - c.size / 2 })),
+        ...o.texts.map((t) => {
+          const b = boxOf(keyOf("text", t.id), o);
+          const gap = b
+            ? Math.hypot(Math.max(b.minX - pos.x, 0, pos.x - b.maxX), Math.max(b.minY - pos.y, 0, pos.y - b.maxY))
+            : Infinity;
+          return { c: t, gap };
+        }),
+      ]
+        .filter(({ gap }) => gap <= reach)
+        .sort((a, b) => a.gap - b.gap)[0]?.c;
       const other: End = end === "from" ? "to" : "from";
       next = {
         ...line,
@@ -662,7 +728,8 @@ export function Board() {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     const sel = selectionRef.current;
-    const itemKind: Kind | null = kind === "circle" || kind === "text" || kind === "line" ? kind : null;
+    const itemKind: Kind | null =
+      kind === "circle" || kind === "square" || kind === "text" || kind === "line" ? kind : null;
     const inSelection = itemKind !== null && sel.length > 1 && sel.includes(keyOf(itemKind, id));
     const grouped = itemKind !== null ? withGroups([keyOf(itemKind, id)]) : [];
     const many = inSelection ? sel : grouped.length > 1 ? grouped : null;
@@ -715,12 +782,7 @@ export function Board() {
       const a = toBoard(Math.min(m.x1, m.x2), Math.min(m.y1, m.y2));
       const b = toBoard(Math.max(m.x1, m.x2), Math.max(m.y1, m.y2));
       const area = { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
-      const all: Key[] = [
-        ...circles.map((c) => keyOf("circle", c.id)),
-        ...texts.map((t) => keyOf("text", t.id)),
-        ...lines.map((l) => keyOf("line", l.id)),
-      ];
-      setSelection(withGroups(all.filter((k) => touches(k, area))));
+      setSelection(withGroups(allKeys(board).filter((k) => touches(k, area))));
       return;
     }
 
@@ -730,7 +792,7 @@ export function Board() {
     // A click without moving selects just that thing: circles and texts open
     // their menu, lines show their end dots, arrow buttons and menu. Clicking
     // a selected circle or text again deselects it.
-    if (d.kind === "circle" || d.kind === "text" || d.kind === "line") {
+    if (d.kind === "circle" || d.kind === "square" || d.kind === "text" || d.kind === "line") {
       const k = keyOf(d.kind, d.id);
       const grouped = withGroups([k]);
       if (grouped.length > 1) setSelection(grouped);
@@ -745,11 +807,37 @@ export function Board() {
     setBoard((b) => ({
       ...b,
       circles: b.circles.filter((x) => x.id !== c.id),
-      texts: [...b.texts, { id: c.id, x: c.x, y: c.y, text: "", fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false }],
+      texts: [
+        ...b.texts,
+        { id: c.id, x: c.x, y: c.y, text: "", fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false, group: c.group },
+      ],
     }));
     setSelection([]);
     editingIsNew.current = true;
     setEditing(c.id);
+  }
+
+  // The circle menu's square icon: swap the circle for a square outline in the
+  // same place (same id, so attached lines stay attached), still selected.
+  function circleToSquare(c: Circle) {
+    commit();
+    setBoard((b) => ({
+      ...b,
+      circles: b.circles.filter((x) => x.id !== c.id),
+      squares: [...b.squares, { id: c.id, x: c.x, y: c.y, size: c.size, color: TEXT_COLORS[0], group: c.group }],
+    }));
+    setSelection([keyOf("square", c.id)]);
+  }
+
+  function updateSquare(id: number, patch: Partial<Square>) {
+    commit();
+    setSquares((qs) => qs.map((q) => (q.id === id ? { ...q, ...patch } : q)));
+  }
+
+  function confirmLabel(id: number, value: string) {
+    setEditingLabel(null);
+    const label = value.trim() || undefined;
+    if (squares.find((q) => q.id === id)?.label !== label) updateSquare(id, { label });
   }
 
   function startEditing(id: number) {
@@ -760,7 +848,7 @@ export function Board() {
 
   function confirmText(id: number, value: string) {
     setEditing(null);
-    const text = value.replace(/\n/g, " ").trim();
+    const text = value.trim();
     const current = texts.find((t) => t.id === id);
     if (!editingIsNew.current && current?.text !== text) commit();
     if (text) {
@@ -847,6 +935,7 @@ export function Board() {
   const single = selection.length === 1 ? selection[0] : null;
   const singleId = single ? Number(single.split(":")[1]) : null;
   const menuCircle = single?.startsWith("circle:") ? circles.find((c) => c.id === singleId) : undefined;
+  const menuSquare = single?.startsWith("square:") ? squares.find((q) => q.id === singleId) : undefined;
   const selectedLine = single?.startsWith("line:") ? lines.find((l) => l.id === singleId) : undefined;
   const groupBox =
     selection.length > 1 ? mergeBoxes(selection.map((k) => boxOf(k)).filter((b): b is Box => !!b)) : null;
@@ -854,7 +943,8 @@ export function Board() {
   // Whether the selection is exactly one group (then the button ungroups).
   const groupOf = (k: Key) => {
     const [kind, idStr] = k.split(":");
-    const list: { id: number; group?: number }[] = kind === "circle" ? circles : kind === "text" ? texts : lines;
+    const list: { id: number; group?: number }[] =
+      kind === "circle" ? circles : kind === "square" ? squares : kind === "text" ? texts : lines;
     return list.find((x) => x.id === Number(idStr))?.group;
   };
   const isOneGroup =
@@ -987,6 +1077,55 @@ export function Board() {
           />
         ))}
 
+        {squares.map((q) => {
+          const inGroup = selection.length > 1 && selection.includes(keyOf("square", q.id));
+          const labelStyle = { fontSize: squareLabelSize(q.size), color: q.color, lineHeight: 1.2 };
+          return (
+            <div
+              key={q.id}
+              className="pointer-events-none absolute"
+              style={{ left: q.x - q.size / 2, top: q.y - q.size / 2, width: q.size, height: q.size }}
+            >
+              <svg className="absolute inset-0 overflow-visible" width={q.size} height={q.size}>
+                {inGroup && (
+                  <rect width={q.size} height={q.size} fill="none" stroke={SELECT_BLUE} strokeOpacity={0.35} strokeWidth={px(6)} />
+                )}
+                <rect x={1} y={1} width={q.size - 2} height={q.size - 2} fill="none" stroke={q.color} strokeWidth={2} />
+                {/* Only the outline can be grabbed, not the space inside. */}
+                <rect
+                  data-square={q.id}
+                  width={q.size}
+                  height={q.size}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={px(12)}
+                  className="cursor-grab active:cursor-grabbing"
+                  style={{ pointerEvents: "stroke" }}
+                  onPointerDown={(e) => startDrag(e, "square", q.id)}
+                />
+              </svg>
+              {/* The label sits on the outside of the top left corner. */}
+              <div className="absolute bottom-full left-0" style={{ marginBottom: q.size * 0.04 }}>
+                {editingLabel === q.id ? (
+                  <div className="pointer-events-auto">
+                    <TextEditor
+                      initial={q.label ?? ""}
+                      style={labelStyle}
+                      onConfirm={(value) => confirmLabel(q.id, value)}
+                    />
+                  </div>
+                ) : (
+                  q.label && (
+                    <div data-square-label={q.id} className="whitespace-pre px-1" style={labelStyle}>
+                      {q.label}
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          );
+        })}
+
         {texts.map((t) => {
           const isEditing = editing === t.id;
           const showMenu = single === keyOf("text", t.id);
@@ -1058,6 +1197,7 @@ export function Board() {
                   >
                     Bold
                   </button>
+                  <LinkButton />
                 </div>
               )}
             </div>
@@ -1182,6 +1322,45 @@ export function Board() {
             >
               Text
             </button>
+            <button
+              onClick={() => circleToSquare(menuCircle)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+            >
+              <SquareIcon />
+              Square
+            </button>
+            <LinkButton />
+          </div>
+        )}
+
+        {menuSquare && (
+          <div
+            data-menu="square"
+            onPointerDown={(e) => e.stopPropagation()}
+            className="absolute flex min-w-40 flex-col gap-1 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+            style={{ left: menuSquare.x + menuSquare.size / 2 + 8, top: menuSquare.y - menuSquare.size / 2 }}
+          >
+            <div className="flex gap-1.5 px-1 py-1">
+              {TEXT_COLORS.map((color) => (
+                <button
+                  key={color}
+                  aria-label={`Colour ${color}`}
+                  onClick={() => updateSquare(menuSquare.id, { color })}
+                  className={`size-5 rounded-full ${menuSquare.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                  style={{ background: color }}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setSelection([]);
+                setEditingLabel(menuSquare.id);
+              }}
+              className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+            >
+              Text
+            </button>
+            <LinkButton />
           </div>
         )}
 
@@ -1244,7 +1423,7 @@ export function Board() {
   );
 }
 
-// The text being typed. Enter or clicking elsewhere confirms it.
+// The text being typed. Enter starts a new line; clicking elsewhere confirms it.
 function TextEditor({
   initial,
   style,
@@ -1280,10 +1459,10 @@ function TextEditor({
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          ref.current?.blur();
+          document.execCommand("insertLineBreak");
         }
       }}
-      onBlur={(e) => onConfirm(e.currentTarget.textContent ?? "")}
+      onBlur={(e) => onConfirm(e.currentTarget.innerText)}
       className="min-w-[1ch] cursor-text whitespace-pre bg-white px-1 outline-none"
       style={{ ...style, userSelect: "text", caretColor: style.color }}
     />
