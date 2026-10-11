@@ -7,7 +7,9 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Press **b** to add a circle at the cursor. It is selected straight away with its menu open.
 - Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it. A line that starts or ends inside a circle or text is attached to it.
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.
-- Click a line and choose **Time**, then Day, Week, Month or Year, and enter a beginning and end. The line becomes a timeline, like a ruler with dates.
+- Click a line and choose **Time**, then Day, Week, Month or Year. The line becomes a timeline, like a ruler.
+  - **Day** (0–31), **Week** (1–4) and **Year**: two slots, Beginning → End. Type a number or scroll over a slot to count up or down. Enter moves from Beginning to End, and Enter again finishes.
+  - **Month**: pick the beginning month (Jan–Dec), then the end month. It can wrap round the year, e.g. Nov → Feb.
 - Click a line to show an arrow button beside each end. Click one to give that end an arrowhead; click again to remove it.
 - Click a line and choose **Text** to type text in the middle of the line. Double-click that text to edit it.
 - Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends.

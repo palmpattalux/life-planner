@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LinkButton } from "./icons";
-import { timelineTicks, todayValue, type Timeline, type TimeUnit } from "./timeline";
+import { LIMITS, MONTHS, timelineTicks, type Timeline, type TimeUnit } from "./timeline";
 
 const UNITS: { unit: TimeUnit; label: string }[] = [
   { unit: "day", label: "Day" },
@@ -11,25 +11,14 @@ const UNITS: { unit: TimeUnit; label: string }[] = [
   { unit: "year", label: "Year" },
 ];
 
-const INPUT_TYPE: Record<TimeUnit, string> = {
-  day: "date",
-  week: "week",
-  month: "month",
-  year: "number",
-};
-
-// Shown where a browser has no picker for that input type.
-const PLACEHOLDER: Record<TimeUnit, string> = {
-  day: "2026-10-10",
-  week: "2026-W41",
-  month: "2026-10",
-  year: "2026",
-};
-
 // The box that pops up beside a clicked line.
-// "Time" -> pick a unit -> enter beginning and end -> Done turns the line into
-// a timeline. "Angle" adds a bend point to the line. "Text" types text in the middle of the line. The chain icon is for
-// links later on.
+// "Time" -> pick a unit -> pick a beginning and end -> the line becomes a
+// timeline. Day (0-31), week (1-4) and year use two number slots: type a
+// number or scroll over the slot; Enter moves on to the end slot, then
+// finishes. Month shows the months to pick from, once for the beginning and
+// once for the end.
+// "Angle" adds a bend point to the line. "Text" types text in the middle of
+// the line. The chain icon is for links later on.
 export function LineMenu({
   time,
   onDone,
@@ -41,22 +30,30 @@ export function LineMenu({
   onAngle: () => void;
   onText: () => void;
 }) {
-  const [step, setStep] = useState<"menu" | "unit" | "range">("menu");
+  const [step, setStep] = useState<"menu" | "unit" | "range" | "monthStart" | "monthEnd">("menu");
   const [unit, setUnit] = useState<TimeUnit>(time?.unit ?? "day");
   const [start, setStart] = useState(time?.start ?? "");
   const [end, setEnd] = useState(time?.end ?? "");
+  const endRef = useRef<HTMLInputElement>(null);
   const valid = timelineTicks({ unit, start, end }) !== null;
 
   function pickUnit(u: TimeUnit) {
-    if (u !== unit || !start) {
-      setStart(u === time?.unit ? time.start : todayValue(u));
-      setEnd(u === time?.unit ? time.end : "");
-    }
+    setStart(u === time?.unit ? time.start : "");
+    setEnd(u === time?.unit ? time.end : "");
     setUnit(u);
-    setStep("range");
+    setStep(u === "month" ? "monthStart" : "range");
   }
 
   const item = "w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100";
+  const back = (
+    <button
+      type="button"
+      onClick={() => setStep("unit")}
+      className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
+    >
+      Back
+    </button>
+  );
 
   return (
     <div
@@ -98,36 +95,29 @@ export function LineMenu({
             if (valid) onDone({ unit, start, end });
           }}
         >
-          <label className="block text-xs text-stone-500">
-            Beginning
-            <input
+          <div className="flex items-end gap-1.5">
+            <NumberSlot
               name="start"
-              type={INPUT_TYPE[unit]}
-              placeholder={PLACEHOLDER[unit]}
+              label="Beginning"
+              unit={unit}
               value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="mt-0.5 w-full rounded border border-stone-300 px-2 py-1 text-sm text-stone-900"
+              onChange={setStart}
+              autoFocus
+              onEnter={() => endRef.current?.focus()}
             />
-          </label>
-          <label className="block text-xs text-stone-500">
-            End
-            <input
+            <span className="pb-1.5 text-stone-400">→</span>
+            <NumberSlot
               name="end"
-              type={INPUT_TYPE[unit]}
-              placeholder={PLACEHOLDER[unit]}
+              label="End"
+              unit={unit}
               value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              className="mt-0.5 w-full rounded border border-stone-300 px-2 py-1 text-sm text-stone-900"
+              onChange={setEnd}
+              inputRef={endRef}
+              onEnter={() => valid && onDone({ unit, start, end })}
             />
-          </label>
+          </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStep("unit")}
-              className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
-            >
-              Back
-            </button>
+            {back}
             <button
               type="submit"
               disabled={!valid}
@@ -138,6 +128,120 @@ export function LineMenu({
           </div>
         </form>
       )}
+
+      {(step === "monthStart" || step === "monthEnd") && (
+        <div className="space-y-1.5 p-1">
+          <div className="text-xs text-stone-500">{step === "monthStart" ? "Beginning" : "End"}</div>
+          <div className="grid grid-cols-3 gap-1">
+            {MONTHS.map((m, i) => {
+              const value = String(i + 1);
+              const chosen = step === "monthStart" ? start === value : end === value;
+              return (
+                <button
+                  key={m}
+                  data-month={m}
+                  disabled={step === "monthEnd" && value === start}
+                  onClick={() => {
+                    if (step === "monthStart") {
+                      setStart(value);
+                      setStep("monthEnd");
+                    } else {
+                      onDone({ unit, start, end: value });
+                    }
+                  }}
+                  className={`rounded px-2 py-1 text-sm disabled:opacity-30 ${
+                    chosen ? "bg-stone-900 text-white" : "hover:bg-stone-100"
+                  }`}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+          {step === "monthStart" ? back : (
+            <button
+              type="button"
+              onClick={() => setStep("monthStart")}
+              className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
+            >
+              Back
+            </button>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+// A number box for the beginning or end. Type a number, or scroll over it
+// (mouse wheel or trackpad) to count up and down within the unit's limits.
+function NumberSlot({
+  name,
+  label,
+  unit,
+  value,
+  onChange,
+  onEnter,
+  autoFocus,
+  inputRef,
+}: {
+  name: string;
+  label: string;
+  unit: TimeUnit;
+  value: string;
+  onChange: (v: string) => void;
+  onEnter: () => void;
+  autoFocus?: boolean;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
+}) {
+  const ownRef = useRef<HTMLInputElement>(null);
+  const ref = inputRef ?? ownRef;
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
+
+  useEffect(() => {
+    const el = ref.current!;
+    if (autoFocus) el.focus({ preventScroll: true });
+    // Trackpads send lots of small scroll steps; count once per this much.
+    const STEP = 40;
+    let pending = 0;
+    function onWheel(e: WheelEvent) {
+      // Keep the board from zooming or moving while scrolling the number.
+      e.preventDefault();
+      e.stopPropagation();
+      pending += e.deltaY;
+      if (Math.abs(pending) < STEP) return;
+      const steps = -Math.trunc(pending / STEP);
+      pending %= STEP;
+      const { min, max } = LIMITS[unit];
+      const { value, onChange } = latest.current;
+      const from = value === "" ? (unit === "year" ? new Date().getFullYear() : min) - steps : Number(value);
+      onChange(String(Math.min(max, Math.max(min, from + steps))));
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // Set up once per slot; reads the current value through a ref.
+  }, [unit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { min, max } = LIMITS[unit];
+  return (
+    <label className="block flex-1 text-xs text-stone-500">
+      {label}
+      <input
+        ref={ref}
+        name={name}
+        inputMode="numeric"
+        placeholder={unit === "year" ? String(new Date().getFullYear()) : `${min}-${max}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 4))}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onEnter();
+          }
+        }}
+        className="mt-0.5 w-full rounded border border-stone-300 px-2 py-1 text-sm text-stone-900"
+      />
+    </label>
   );
 }
