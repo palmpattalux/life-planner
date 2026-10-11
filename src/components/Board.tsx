@@ -49,6 +49,7 @@ type Line = {
   fromArrow?: boolean;
   toArrow?: boolean;
   time?: Timeline;
+  label?: string; // text in the middle of the line
   group?: number;
 };
 type End = "from" | "to";
@@ -87,6 +88,8 @@ const TICK = 6;
 const MAJOR_TICK = 10;
 const TICK_LABEL_SIZE = 11;
 const TICK_LABEL_GAP = 56; // roughly the width of one label
+// Text in the middle of a line, in board units.
+const LINE_LABEL_SIZE = 16;
 // How close (in screen pixels, beyond the circle's edge) a dragged line end
 // has to be to a circle to attach to it.
 const ATTACH_DISTANCE = 16;
@@ -142,6 +145,8 @@ export function Board() {
 
   const [selection, setSelection] = useState<Key[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
+  // Which line's middle text is being typed.
+  const [editingLineLabel, setEditingLineLabel] = useState<number | null>(null);
   // Which square's label is being typed.
   const [editingLabel, setEditingLabel] = useState<number | null>(null);
   // Which text is showing its px size label while being resized.
@@ -552,6 +557,7 @@ export function Board() {
       setSelection(allKeys({ circles, squares, texts, lines }));
       setEditing(null);
       setEditingLabel(null);
+      setEditingLineLabel(null);
     }
 
     function undo() {
@@ -563,6 +569,7 @@ export function Board() {
       setSelection((s) => s.filter((k) => exists.has(k)));
       setEditing(null);
       setEditingLabel(null);
+      setEditingLineLabel(null);
     }
 
     function onKeyDown(e: KeyboardEvent) {
@@ -857,6 +864,12 @@ export function Board() {
     setSquares((qs) => qs.map((q) => (q.id === id ? { ...q, ...patch } : q)));
   }
 
+  function confirmLineLabel(id: number, value: string) {
+    setEditingLineLabel(null);
+    const label = value.trim() || undefined;
+    if (lines.find((l) => l.id === id)?.label !== label) updateLine(id, { label });
+  }
+
   function confirmLabel(id: number, value: string) {
     setEditingLabel(null);
     const label = value.trim() || undefined;
@@ -1149,6 +1162,43 @@ export function Board() {
           );
         })}
 
+        {/* Text in the middle of lines. Drag it to move the line; double-click
+            to edit it. */}
+        {lines.map((line) => {
+          if (!line.label && editingLineLabel !== line.id) return null;
+          const pts = drawPoints(resolve(line));
+          const mid = pointAlong(pts, polylineLength(pts) / 2).p;
+          const style = { fontSize: LINE_LABEL_SIZE, color: INK, lineHeight: 1.2, textAlign: "center" as const };
+          return (
+            <div
+              key={line.id}
+              className="absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: mid.x, top: mid.y }}
+            >
+              {editingLineLabel === line.id ? (
+                <TextEditor
+                  initial={line.label ?? ""}
+                  style={style}
+                  onConfirm={(value) => confirmLineLabel(line.id, value)}
+                />
+              ) : (
+                <div
+                  data-line-label={line.id}
+                  onPointerDown={(e) => startDrag(e, "line", line.id)}
+                  onDoubleClick={() => {
+                    setSelection([]);
+                    setEditingLineLabel(line.id);
+                  }}
+                  className="cursor-grab whitespace-pre bg-white px-1 active:cursor-grabbing"
+                  style={style}
+                >
+                  {line.label}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
         {texts.map((t) => {
           const isEditing = editing === t.id;
           const showMenu = single === keyOf("text", t.id);
@@ -1326,6 +1376,10 @@ export function Board() {
                       setSelection([]);
                     }}
                     onAngle={() => addBend(selectedLine)}
+                    onText={() => {
+                      setSelection([]);
+                      setEditingLineLabel(l.id);
+                    }}
                   />
                 </div>
               </>

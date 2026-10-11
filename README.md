@@ -9,6 +9,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.
 - Click a line and choose **Time**, then Day, Week, Month or Year, and enter a beginning and end. The line becomes a timeline, like a ruler with dates.
 - Click a line to show an arrow button beside each end. Click one to give that end an arrowhead; click again to remove it.
+- Click a line and choose **Text** to type text in the middle of the line. Double-click that text to edit it.
 - Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends.
 - Click anything and press **Backspace** to delete it.
 - **Ctrl+Z** (or Cmd+Z) undoes any change: adding, moving, resizing, recolouring, arrows, bends, deleting.

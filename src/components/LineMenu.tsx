@@ -28,16 +28,18 @@ const PLACEHOLDER: Record<TimeUnit, string> = {
 
 // The box that pops up beside a clicked line.
 // "Time" -> pick a unit -> enter beginning and end -> Done turns the line into
-// a timeline. "Angle" adds a bend point to the line. The chain icon is for
+// a timeline. "Angle" adds a bend point to the line. "Text" types text in the middle of the line. The chain icon is for
 // links later on.
 export function LineMenu({
   time,
   onDone,
   onAngle,
+  onText,
 }: {
   time?: Timeline;
   onDone: (time: Timeline) => void;
   onAngle: () => void;
+  onText: () => void;
 }) {
   const [step, setStep] = useState<"menu" | "unit" | "range">("menu");
   const [unit, setUnit] = useState<TimeUnit>(time?.unit ?? "day");
@@ -73,6 +75,9 @@ export function LineMenu({
               <path d="M2 14 L8 3 L14 14" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Angle
+          </button>
+          <button className={item} onClick={onText}>
+            Text
           </button>
           <LinkButton />
         </>
