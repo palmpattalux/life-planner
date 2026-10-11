@@ -5,7 +5,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
 - Press **b** to add a circle at the cursor.
-- Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it.
+- Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it. A line that starts or ends inside a circle or text is attached to it.
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.
 - Click a line and choose **Time**, then Day, Week, Month or Year, and enter a beginning and end. The line becomes a timeline, like a ruler with dates.
 - Click a line to show an arrow button beside each end. Click one to give that end an arrowhead; click again to remove it.

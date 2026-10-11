@@ -270,6 +270,16 @@ export function Board() {
     return l ? boxAround(pointsOf(resolve(l, data))) : null;
   }
 
+  // The circle or text (topmost first) that this board point is inside.
+  function itemAt(p: Point, data: BoardData): { id: number; x: number; y: number } | undefined {
+    const text = [...data.texts].reverse().find((t) => {
+      const b = boxOf(keyOf("text", t.id), data);
+      return b && p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
+    });
+    if (text) return text;
+    return [...data.circles].reverse().find((c) => Math.hypot(c.x - p.x, c.y - p.y) <= c.size / 2);
+  }
+
   // Whether a thing touches the selection box at all.
   function touches(key: Key, area: Box): boolean {
     const [kind, idStr] = key.split(":");
@@ -604,7 +614,20 @@ export function Board() {
       // Pressing and releasing N without moving doesn't leave a dot behind.
       if (Math.hypot(d.to.x - d.from.x, d.to.y - d.from.y) * viewRef.current.scale < CLICK_SLOP) return;
       commit();
-      setLines((ls) => [...ls, { id: nextId.current++, from: d.from, to: d.to }]);
+      // A line started or ended inside a circle or text is attached to it.
+      const data = boardRef.current;
+      const a = itemAt(d.from, data);
+      const b = itemAt(d.to, data);
+      setLines((ls) => [
+        ...ls,
+        {
+          id: nextId.current++,
+          from: a ? { x: a.x, y: a.y } : d.from,
+          to: b ? { x: b.x, y: b.y } : d.to,
+          fromItem: a?.id,
+          toItem: b?.id,
+        },
+      ]);
     }
 
     window.addEventListener("keydown", onKeyDown);
