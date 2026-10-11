@@ -88,6 +88,8 @@ const SNAP_PINK = "#ec4899";
 // Checklist boxes are stored as these characters at the start of a text line.
 const UNCHECKED = "☐";
 const CHECKED = "☑";
+// Pressing Tab while typing moves the line right by this much.
+const INDENT = "    ";
 const PHASE_ORANGE = "#f97316";
 // How far a new phase sits from the timeline it was made from, in board units.
 const PHASE_GAP = 48;
@@ -1108,13 +1110,16 @@ export function Board() {
     if (!t) return;
     const lines = t.text.split("\n");
     const line = lines[lineIndex];
-    lines[lineIndex] = (line[0] === CHECKED ? UNCHECKED : CHECKED) + line.slice(1);
+    const indent = line.match(/^ */)![0];
+    const box = line[indent.length] === CHECKED ? UNCHECKED : CHECKED;
+    lines[lineIndex] = indent + box + line.slice(indent.length + 1);
     updateText(id, { text: lines.join("\n") });
   }
 
   function confirmText(id: number, value: string) {
     setEditing(null);
-    const text = value.trim();
+    // Keep the first line's indent, so only trailing space and blank leading lines go.
+    const text = value.trim() ? value.replace(/^\s*\n/, "").trimEnd() : "";
     const current = texts.find((t) => t.id === id);
     if (!editingIsNew.current && current?.text !== text) commit();
     if (text) {
@@ -1620,11 +1625,14 @@ export function Board() {
                     boxShadow: inGroup ? `0 0 0 ${px(2)}px rgb(59 130 246 / 0.35)` : undefined,
                   }}
                 >
-                  {t.text.split("\n").map((line, i) => {
+                  {t.text.split("\n").map((full, i) => {
+                    const indent = full.match(/^ */)![0];
+                    const line = full.slice(indent.length);
                     const box = line[0] === UNCHECKED || line[0] === CHECKED;
                     return (
                       <Fragment key={i}>
                         {i > 0 && "\n"}
+                        {indent}
                         {box ? (
                           <>
                             <span
@@ -2076,7 +2084,7 @@ function textBeforeCaret(el: HTMLElement): string {
 }
 
 // The text being typed. Enter starts a new line; clicking elsewhere confirms it.
-// With `lists`, Enter on a checklist line starts the next line with a box, and
+// Tab moves the caret's line right and Shift+Tab moves it back. With `lists`, Enter on a checklist line starts the next line with a box, and
 // on a numbered line with the next number. Enter on a line holding only the
 // box or number ends the list.
 function TextEditor({
@@ -2114,9 +2122,31 @@ function TextEditor({
       suppressContentEditableWarning
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
+        if (e.key === "Tab") {
+          e.preventDefault();
+          const before = textBeforeCaret(e.currentTarget);
+          const sel = window.getSelection()!;
+          // Step to the start of the line, add or remove the indent there, then
+          // step back to where the caret was.
+          const moveCaret = (dir: "backward" | "forward", n: number) => {
+            for (let i = 0; i < n; i++) sel.modify("move", dir, "character");
+          };
+          moveCaret("backward", before.length);
+          if (!e.shiftKey) {
+            document.execCommand("insertText", false, INDENT);
+            moveCaret("forward", before.length);
+            return;
+          }
+          const remove = Math.min(before.match(/^ */)![0].length, INDENT.length);
+          for (let i = 0; i < remove; i++) document.execCommand("forwardDelete");
+          moveCaret("forward", before.length - remove);
+          return;
+        }
         if (e.key === "Enter") {
           e.preventDefault();
-          const line = lists ? textBeforeCaret(e.currentTarget) : "";
+          const full = lists ? textBeforeCaret(e.currentTarget) : "";
+          const indent = full.match(/^ */)![0];
+          const line = full.slice(indent.length);
           const number = line.match(/^(\d+)\. /);
           const marker = /^[☐☑] /.test(line) ? `${UNCHECKED} ` : number ? `${Number(number[1]) + 1}. ` : "";
           if (marker && line === (number ? number[0] : line.slice(0, 2))) {
@@ -2125,7 +2155,8 @@ function TextEditor({
             return;
           }
           document.execCommand("insertLineBreak");
-          if (marker) document.execCommand("insertText", false, marker);
+          // A list line keeps its indent on the next line.
+          if (marker) document.execCommand("insertText", false, indent + marker);
         }
       }}
       onBlur={(e) => onConfirm(e.currentTarget.innerText)}
