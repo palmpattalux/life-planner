@@ -21,6 +21,8 @@ export const PHASE_GAP = 48;
 export const PHASE_GAP_PAST_LABELS = 72;
 // How much bigger a bold pinned timeline mark is drawn.
 export const PIN_GROW = 1.5;
+// How far a phase bracket's ends curl toward its timeline, in board units.
+export const BRACKET_CURL = 14;
 // Moving less than this many pixels between press and release counts as a click.
 export const CLICK_SLOP = 4;
 // Scroll steps closer together than this are one resize, undone in one go.

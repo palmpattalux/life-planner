@@ -163,3 +163,25 @@ export function offsetPolyline(points: Point[], by: number): Point[] {
     return { x: p.x + n.x * by, y: p.y + n.y * by };
   });
 }
+
+// An SVG path along the points whose two ends curl a quarter turn to one
+// side, like "]". `side` 1 or -1 picks the side (of the direction of travel
+// turned a quarter anticlockwise on screen); `curl` is how far they reach.
+export function bracketPath(points: Point[], side: 1 | -1, curl: number): string {
+  const n = points.length;
+  const first = unit(points[0], points[1]);
+  const last = unit(points[n - 2], points[n - 1]);
+  // Short brackets get smaller curls so the ends don't overlap.
+  const r = Math.min(curl, polylineLength(points) / 3);
+  const at = (p: Point, d: Point, k: number) => `${p.x + d.x * k},${p.y + d.y * k}`;
+  const turn = (d: Point) => ({ x: d.y * side, y: -d.x * side });
+  const [a, b] = [points[0], points[n - 1]];
+  const middle = points.slice(1, -1).map((p) => `L${p.x},${p.y}`);
+  return [
+    `M${at(a, turn(first), r)}`,
+    `Q${a.x},${a.y} ${at(a, first, r)}`,
+    ...middle,
+    `L${at(b, last, -r)}`,
+    `Q${b.x},${b.y} ${at(b, turn(last), r)}`,
+  ].join(" ");
+}

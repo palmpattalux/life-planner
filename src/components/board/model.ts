@@ -52,6 +52,11 @@ export type Line = {
   // Pinned timeline marks, by their value (as in `time`): drawn bigger
   // (when bold) and in their own colour.
   pins?: Pin[];
+  // A phase made from another timeline: drawn as a bracket, like "]", whose
+  // ends curl toward that timeline, showing only its first and last dates.
+  // 1 or -1: which side the ends curl to (of the line's direction turned
+  // a quarter anticlockwise on screen).
+  bracket?: 1 | -1;
   group?: number;
 };
 export type Pin = { value: string; bold: boolean; color: string };

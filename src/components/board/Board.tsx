@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ATTACH_DISTANCE,
+  BRACKET_CURL,
   BOARD_H,
   BOARD_W,
   CHECKED,
@@ -44,6 +45,7 @@ import {
   circleTouchesBox,
   mergeBoxes,
   newBend,
+  bracketPath,
   pointAlong,
   polylineLength,
   segmentTouchesBox,
@@ -315,10 +317,11 @@ export function Board({
     ];
   }
 
-  // A line's points that snap: its ends, bends and timeline marks.
+  // A line's points that snap: its ends, bends and timeline marks (a phase
+  // bracket shows no marks, so only its ends and bends).
   function lineSnapPoints(l: Line, data: BoardData): Point[] {
     const pts = pointsOf(resolve(l, data));
-    const labels = (l.time && timelineTicks(l.time)) || [];
+    const labels = (!l.bracket && l.time && timelineTicks(l.time)) || [];
     const len = polylineLength(pts);
     const marks = labels.length > 1 ? labels.map((_, i) => pointAlong(pts, (len * i) / (labels.length - 1)).p) : [];
     return [...pts, ...marks];
@@ -1144,6 +1147,8 @@ export function Board({
         to: off[off.length - 1],
         bends: off.length > 2 ? off.slice(1, -1) : undefined,
         time: { unit: l.time!.unit, start: tickValue(l.time!, i1), end: tickValue(l.time!, i2) },
+        // Its ends curl back toward the timeline it came from.
+        bracket: side > 0 ? -1 : 1,
       },
     ]);
     setPhase(null);
@@ -1198,7 +1203,29 @@ export function Board({
       const isEnd = i === 0 || i === n - 1;
       const pin = l.pins?.find((p) => p.value === tickValue(l.time!, i));
       if (!pin && !isEnd && i % tickEvery !== 0) return null;
+      // A phase bracket shows only its first and last dates, outside the
+      // bracket (away from the timeline it came from), with no marks.
+      if (l.bracket && !pin && !isEnd) return null;
       const { p, dir } = pointAlong(pts, n > 1 ? (len * i) / (n - 1) : 0);
+      if (l.bracket && !pin) {
+        const away = { x: -dir.y * l.bracket, y: dir.x * l.bracket };
+        const gap = TICK_LABEL_SIZE;
+        return (
+          <text
+            key={i}
+            data-tick={text}
+            x={p.x + away.x * gap}
+            y={p.y + away.y * gap}
+            fontSize={TICK_LABEL_SIZE}
+            fill={l.color ?? "#57534e"}
+            // Beside an upright bracket the label starts (or ends) at it.
+            textAnchor={away.x > 0.5 ? "start" : away.x < -0.5 ? "end" : "middle"}
+            dominantBaseline="middle"
+          >
+            {text}
+          </text>
+        );
+      }
       // Perpendicular to the line, pointing down-ish so labels sit under it.
       let nx = -dir.y;
       let ny = dir.x;
@@ -1345,17 +1372,30 @@ export function Board({
                       strokeLinejoin="round"
                     />
                   )}
-                  <polyline
-                    data-line="line"
-                    points={toPolyline(pts)}
-                    fill="none"
-                    stroke={l.color ?? INK}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    markerStart={l.fromArrow ? arrowheadFor(l) : undefined}
-                    markerEnd={l.toArrow ? arrowheadFor(l) : undefined}
-                  />
+                  {l.bracket && l.time ? (
+                    <path
+                      data-line="line"
+                      data-bracket
+                      d={bracketPath(pts, l.bracket, BRACKET_CURL)}
+                      fill="none"
+                      stroke={l.color ?? INK}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ) : (
+                    <polyline
+                      data-line="line"
+                      points={toPolyline(pts)}
+                      fill="none"
+                      stroke={l.color ?? INK}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      markerStart={l.fromArrow ? arrowheadFor(l) : undefined}
+                      markerEnd={l.toArrow ? arrowheadFor(l) : undefined}
+                    />
+                  )}
                   {timelineMarks(l, pts)}
                   {/* Wider invisible stroke so the line is easy to grab. */}
                   <polyline
