@@ -2,7 +2,7 @@
 
 A huge white board, like Miro, with faint grey dots and a light grey line at its edge. Log in from any device.
 
-Opening the app goes straight to the board you opened last, with an **Open?** box on the right listing all your boards as big boxes that share out its space (the more boards, the smaller each box) so you can switch with one click. Click anywhere else or the x to close it; **Projects** at the top left opens it again. Hovering a board shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. The box also has **New board**. Boards save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left.
+Opening the app goes straight to the board you opened last, with an **Open?** box on the right listing all your boards as big boxes that share out its space (the more boards, the smaller each box) so you can switch with one click. Click anywhere else or the x to close it. **Home** at the top left of a board goes to the Home page: your account email at the top left, a menu at the top right with **Log out**, and all your boards as the same boxes. Hovering a board shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. Both have **New board**. Boards save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left.
 
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
@@ -81,8 +81,10 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 
 | Path | What it does |
 | --- | --- |
-| `src/app/page.tsx` | Opens the most recent board (or offers to start one) |
-| `src/app/OpenPanel.tsx` | The Open? box: board boxes to switch, remove (trash), duplicate, restore |
+| `src/app/page.tsx` | Opens the most recent board (or Home when there are none) |
+| `src/app/home/` | Home page: account email, menu with Log out, all boards |
+| `src/app/BoardList.tsx` | Board boxes (used by Home and Open?): switch, remove (trash), duplicate, restore, new |
+| `src/app/OpenPanel.tsx` | The Open? box on a board |
 | `src/app/board/[id]/` | A saved board (saves as you go, keeps presets) |
 | `src/app/actions.ts` | Making a new board |
 | `src/app/login/` | Log in and create account |

@@ -15,3 +15,10 @@ export async function createBoard() {
   if (error || !data) throw new Error(error?.message ?? "Couldn't create the board");
   redirect(`/board/${data.id}`);
 }
+
+// Log out and go back to the login page.
+export async function signOut() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect("/login");
+}

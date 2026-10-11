@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Board } from "@/components/board/Board";
 import { EMPTY_BOARD, type BoardData, type Preset } from "@/components/board/model";
@@ -62,9 +63,9 @@ export function BoardPage({
         onDeletePreset={deletePreset}
       />
       <div className="fixed left-4 top-4 flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2 py-1 text-sm shadow">
-        <button onClick={() => setOpenPanel(true)} className="rounded px-1.5 py-0.5 font-medium hover:bg-stone-100">
-          Projects
-        </button>
+        <Link href="/home" className="rounded px-1.5 py-0.5 font-medium hover:bg-stone-100">
+          Home
+        </Link>
         <input
           value={title}
           placeholder="Untitled board"

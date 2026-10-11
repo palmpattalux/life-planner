@@ -12,7 +12,7 @@ export default async function LoginPage({
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6">
       <h1 className="text-3xl font-semibold tracking-tight">Life Planner</h1>
-      <p className="mt-2 text-stone-500">In this phase of my life, what should I be doing?</p>
+      <p className="mt-2 text-stone-500">Log in, or create an account to get started.</p>
 
       <div className="mt-8 grid grid-cols-2 rounded-lg bg-stone-200 p-1 text-center text-sm font-medium">
         <Link href="/login" className={`rounded-md py-1.5 ${!isSignUp ? "bg-white shadow-sm" : "text-stone-600"}`}>

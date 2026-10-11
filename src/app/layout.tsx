@@ -9,7 +9,7 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   title: "Life Planner",
-  description: "In this phase of my life, what should I be doing?",
+  description: "A simple whiteboard for planning your life.",
 };
 
 export const viewport: Viewport = {
