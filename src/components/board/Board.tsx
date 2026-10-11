@@ -56,6 +56,7 @@ import {
 import { CheckMark, ChecklistIcon, LinkButton, PinIcon, SquareIcon } from "./icons";
 import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
+import { ToolIcon } from "./ToolIcon";
 import { keptGuides, snapBoxes, type SnapBox } from "./snapping";
 import {
   allKeys,
@@ -210,6 +211,14 @@ export function Board({
   const [presetSaved, setPresetSaved] = useState(false);
   // The right-hand menu opened with "v".
   const [menuOpen, setMenuOpen] = useState(false);
+  // Phones and tablets: a toolbar stands in for the keys.
+  const [isTouch, setIsTouch] = useState(false);
+  useEffect(() => setIsTouch(window.matchMedia("(pointer: coarse)").matches), []);
+  // The toolbar's Line: the next finger drag draws one line.
+  const [lineMode, setLineMode] = useState(false);
+  // Fingers on the screen, for two-finger moving and pinching like a trackpad.
+  const touchPoints = useRef(new Map<number, Point>());
+  const gesture = useRef<{ mid: Point; dist: number; resize: boolean; committed: boolean } | null>(null);
   // The preset placed on the board with "Edit", until "Update preset" saves it.
   const [editingPreset, setEditingPreset] = useState<string | null>(null);
 
@@ -546,6 +555,11 @@ export function Board({
     // Set up once; reads current values through refs.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The middle of the screen, on the board (where the toolbar adds things).
+  function screenCentre() {
+    return toBoard(window.innerWidth / 2, window.innerHeight / 2);
+  }
+
   // Grow or shrink everything selected by `k` around the middle of the group.
   function resizeSelection(k: number) {
     const sel = selectionRef.current;
@@ -620,6 +634,82 @@ export function Board({
     });
   }
 
+  function undo() {
+    const prev = history.current.pop();
+    if (!prev) return;
+    future.current.push(boardRef.current);
+    restore(prev);
+  }
+
+  function redo() {
+    const next = future.current.pop();
+    if (!next) return;
+    history.current.push(boardRef.current);
+    restore(next);
+  }
+
+  function restore(prev: BoardData) {
+    setBoard(prev);
+    // Keep selected whatever still exists, so its menu stays open.
+    const exists = new Set<Key>(allKeys(prev));
+    setSelection((s) => s.filter((k) => exists.has(k)));
+    setEditing(null);
+    setEditingLabel(null);
+    setEditingLineLabel(null);
+  }
+
+  // Delete whatever is selected (Backspace / Delete, or the phone toolbar).
+  function deleteSelection() {
+    const sel = selectionRef.current;
+    // A clicked angle point goes first: the line straightens there.
+    const bend = selectedBendRef.current;
+    if (bend && sel.length === 1 && sel[0] === keyOf("line", bend.lineId)) {
+      const line = boardRef.current.lines.find((l) => l.id === bend.lineId);
+      const bends = line?.bends?.filter((_, i) => i !== bend.index);
+      setSelectedBend(null);
+      if (line) updateLine(line.id, { bends: bends?.length ? bends : undefined });
+      return;
+    }
+    if (sel.length === 0) return;
+    commit();
+    removeKeys(sel);
+    setSelection([]);
+  }
+
+  // "b" (or the phone toolbar's Circle): a new circle here, selected straight
+  // away so its menu shows.
+  function addCircle(at: Point) {
+    commit();
+    const id = nextId.current++;
+    setCircles((cs) => [...cs, { id, x: at.x, y: at.y, size: CIRCLE_SIZE }]);
+    setSelection([keyOf("circle", id)]);
+  }
+
+  // Letting go of N (or lifting the finger with the phone's Line tool):
+  // the line being drawn is added.
+  function finishDraft() {
+    const d = draftRef.current;
+    if (!d) return;
+    setDraft(null);
+    // Pressing and releasing N without moving doesn't leave a dot behind.
+    if (Math.hypot(d.to.x - d.from.x, d.to.y - d.from.y) * viewRef.current.scale < CLICK_SLOP) return;
+    commit();
+    // A line started or ended inside a circle or text is attached to it.
+    const data = boardRef.current;
+    const a = itemAt(d.from, data);
+    const b = itemAt(d.to, data);
+    setLines((ls) => [
+      ...ls,
+      {
+        id: nextId.current++,
+        from: a ? { x: a.x, y: a.y } : d.from,
+        to: b ? { x: b.x, y: b.y } : d.to,
+        fromItem: a?.id,
+        toItem: b?.id,
+      },
+    ]);
+  }
+
   useEffect(() => {
     function cursorOnBoard() {
       const screen = pointer.current ?? {
@@ -634,30 +724,6 @@ export function Board({
       const el = e.target as HTMLElement | null;
       return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
     };
-
-    function undo() {
-      const prev = history.current.pop();
-      if (!prev) return;
-      future.current.push(boardRef.current);
-      restore(prev);
-    }
-
-    function redo() {
-      const next = future.current.pop();
-      if (!next) return;
-      history.current.push(boardRef.current);
-      restore(next);
-    }
-
-    function restore(prev: BoardData) {
-      setBoard(prev);
-      // Keep selected whatever still exists, so its menu stays open.
-      const exists = new Set<Key>(allKeys(prev));
-      setSelection((s) => s.filter((k) => exists.has(k)));
-      setEditing(null);
-      setEditingLabel(null);
-      setEditingLineLabel(null);
-    }
 
     function onKeyDown(e: KeyboardEvent) {
       if (typing(e)) return;
@@ -682,20 +748,7 @@ export function Board({
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
-        const sel = selectionRef.current;
-        // A clicked angle point goes first: the line straightens there.
-        const bend = selectedBendRef.current;
-        if (bend && sel.length === 1 && sel[0] === keyOf("line", bend.lineId)) {
-          const line = boardRef.current.lines.find((l) => l.id === bend.lineId);
-          const bends = line?.bends?.filter((_, i) => i !== bend.index);
-          setSelectedBend(null);
-          if (line) updateLine(line.id, { bends: bends?.length ? bends : undefined });
-          return;
-        }
-        if (sel.length === 0) return;
-        commit();
-        removeKeys(sel);
-        setSelection([]);
+        deleteSelection();
         return;
       }
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -706,12 +759,7 @@ export function Board({
         e.preventDefault();
         addText(cursorOnBoard());
       } else if (key === "b") {
-        const at = cursorOnBoard();
-        commit();
-        const id = nextId.current++;
-        setCircles((cs) => [...cs, { id, x: at.x, y: at.y, size: CIRCLE_SIZE }]);
-        // Select it straight away so its menu shows.
-        setSelection([keyOf("circle", id)]);
+        addCircle(cursorOnBoard());
       } else if (key === "n" && !draftRef.current) {
         const at = cursorOnBoard();
         setDraft({ from: at, to: at });
@@ -719,27 +767,7 @@ export function Board({
     }
 
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key.toLowerCase() !== "n") return;
-      const d = draftRef.current;
-      if (!d) return;
-      setDraft(null);
-      // Pressing and releasing N without moving doesn't leave a dot behind.
-      if (Math.hypot(d.to.x - d.from.x, d.to.y - d.from.y) * viewRef.current.scale < CLICK_SLOP) return;
-      commit();
-      // A line started or ended inside a circle or text is attached to it.
-      const data = boardRef.current;
-      const a = itemAt(d.from, data);
-      const b = itemAt(d.to, data);
-      setLines((ls) => [
-        ...ls,
-        {
-          id: nextId.current++,
-          from: a ? { x: a.x, y: a.y } : d.from,
-          to: b ? { x: b.x, y: b.y } : d.to,
-          fromItem: a?.id,
-          toItem: b?.id,
-        },
-      ]);
+      if (e.key.toLowerCase() === "n") finishDraft();
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -969,7 +997,96 @@ export function Board({
     setMarquee({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
   }
 
+  // The middle of the two fingers on the screen and how far apart they are.
+  function twoFingers() {
+    const [a, b] = [...touchPoints.current.values()];
+    return { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.hypot(a.x - b.x, a.y - b.y) };
+  }
+
+  // Stop whatever one finger had started (a drag, a selection box, a line),
+  // putting back anything it moved.
+  function cancelPress() {
+    const d = drag.current;
+    drag.current = null;
+    if (d?.moved) {
+      setBoard(d.orig);
+      history.current.pop();
+    }
+    setMarquee(null);
+    setSnapGuides([]);
+    setDraft(null);
+  }
+
+  // Touch, like a trackpad: two fingers move around and pinch to zoom; with
+  // something selected, a pinch resizes it instead (a group only when the
+  // pinch is inside its box). The toolbar's Line makes the next drag draw a line.
+  function onTouchDown(e: React.PointerEvent) {
+    if (e.pointerType !== "touch") return;
+    touchPoints.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touchPoints.current.size >= 2) {
+      e.stopPropagation();
+      if (touchPoints.current.size > 2) return;
+      cancelPress();
+      rootRef.current!.setPointerCapture(e.pointerId);
+      const { mid, dist } = twoFingers();
+      const sel = selectionRef.current;
+      const box = groupBoxRef.current;
+      const at = toBoard(mid.x, mid.y);
+      const pad = 6 / viewRef.current.scale;
+      const insideBox =
+        !!box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad;
+      const resize = (sel.length === 1 && !sel[0].startsWith("line:")) || (sel.length > 1 && insideBox);
+      gesture.current = { mid, dist, resize, committed: false };
+      return;
+    }
+    if (lineMode && !(e.target as HTMLElement).closest("button, input, [contenteditable]")) {
+      e.stopPropagation();
+      rootRef.current!.setPointerCapture(e.pointerId);
+      const at = toBoard(e.clientX, e.clientY);
+      setDraft({ from: at, to: at });
+    }
+  }
+
+  function onTouchMove(e: React.PointerEvent) {
+    if (!touchPoints.current.has(e.pointerId)) return;
+    touchPoints.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gesture.current;
+    if (!g) return;
+    e.stopPropagation();
+    if (touchPoints.current.size < 2) return;
+    const { mid, dist } = twoFingers();
+    const k = g.dist > 0 ? dist / g.dist : 1;
+    if (g.resize) {
+      if (!g.committed) commit();
+      g.committed = true;
+      resizeSelection(k);
+    } else {
+      const from = g.mid;
+      setView((v) => {
+        const scale = clamp(v.scale * k, MIN_SCALE, MAX_SCALE);
+        const f = scale / v.scale;
+        return { scale, x: mid.x - (from.x - v.x) * f, y: mid.y - (from.y - v.y) * f };
+      });
+    }
+    g.mid = mid;
+    g.dist = dist;
+  }
+
+  function onTouchUp(e: React.PointerEvent) {
+    if (!touchPoints.current.delete(e.pointerId)) return;
+    if (!gesture.current) return;
+    // Lifting the fingers after moving or pinching does nothing else.
+    e.stopPropagation();
+    if (touchPoints.current.size === 0) gesture.current = null;
+  }
+
   function onPointerUp() {
+    // The toolbar's Line: lifting the finger adds the line.
+    if (lineMode && draftRef.current) {
+      finishDraft();
+      setLineMode(false);
+      return;
+    }
     if (marquee) {
       const m = marquee;
       setMarquee(null);
@@ -1371,6 +1488,10 @@ export function Board({
         setMarquee(null);
       }}
       onPointerDown={onBoardPointerDown}
+      onPointerDownCapture={onTouchDown}
+      onPointerMoveCapture={onTouchMove}
+      onPointerUpCapture={onTouchUp}
+      onPointerCancelCapture={onTouchUp}
     >
       <div
         className="absolute left-0 top-0 origin-top-left"
@@ -2123,6 +2244,43 @@ export function Board({
         >
           {presetSaved ? "Preset saved" : editingPreset ? "Update preset" : "Save preset"}
         </button>
+      )}
+
+      {isTouch && (
+        <div
+          data-toolbar
+          onPointerDown={(e) => e.stopPropagation()}
+          className="fixed bottom-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2"
+        >
+          {lineMode && (
+            <span className="rounded-md bg-stone-900 px-2 py-1 text-xs text-white">Drag to draw a line</span>
+          )}
+          <div className="flex rounded-xl border border-stone-200 bg-white p-1 shadow-lg">
+            {(
+              [
+                ["Circle", () => addCircle(screenCentre()), false, false],
+                ["Line", () => setLineMode((m) => !m), lineMode, false],
+                ["Text", () => addText(screenCentre()), false, false],
+                ["Undo", undo, false, false],
+                ["Redo", redo, false, false],
+                ["Delete", deleteSelection, false, selection.length === 0],
+                ["Presets", () => setMenuOpen((o) => !o), menuOpen, false],
+              ] as const
+            ).map(([label, onClick, on, disabled]) => (
+              <button
+                key={label}
+                data-tool={label}
+                onClick={onClick}
+                disabled={disabled}
+                aria-pressed={on}
+                className={`flex w-12 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-medium disabled:text-stone-300 ${on ? "bg-stone-900 text-white" : "active:bg-stone-100"}`}
+              >
+                <ToolIcon tool={label} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {menuOpen && (
