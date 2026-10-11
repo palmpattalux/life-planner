@@ -13,8 +13,7 @@ export const supabaseKey = (
 export function missingEnv(): string[] {
   const missing: string[] = [];
   if (!supabaseUrl) missing.push("NEXT_PUBLIC_SUPABASE_URL is missing");
-  else if (!supabaseUrl.startsWith("https://"))
-    missing.push("NEXT_PUBLIC_SUPABASE_URL must start with https://");
+  else if (!supabaseUrl.startsWith("https://")) missing.push("NEXT_PUBLIC_SUPABASE_URL must start with https://");
   if (!supabaseKey)
     missing.push(
       "the key is missing (name it NEXT_PUBLIC_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY)",

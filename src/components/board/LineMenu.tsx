@@ -158,7 +158,9 @@ export function LineMenu({
               );
             })}
           </div>
-          {step === "monthStart" ? back : (
+          {step === "monthStart" ? (
+            back
+          ) : (
             <button
               type="button"
               onClick={() => setStep("monthStart")}

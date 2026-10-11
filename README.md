@@ -84,12 +84,22 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 | `src/app/board/[id]/` | A saved board (saves as you go, keeps presets) |
 | `src/app/note/[id]/` | A note and the pages inside it |
 | `src/app/actions.ts` | Making a new board, note or page |
-| `src/lib/useAutosave.ts` | Saves a page a moment after each change |
-| `src/components/Board.tsx` | The white board |
-| `src/components/SideMenu.tsx` | The menu opened with v (presets) |
-| `src/components/richText.ts` | Text with parts in different sizes, bold and colours |
-| `src/components/LineMenu.tsx` | The box beside a clicked line (Time, Angle) |
-| `src/components/geometry.ts` | Maths for bent lines and selection boxes |
-| `src/components/timeline.ts` | Works out the dates along a timeline |
 | `src/app/login/` | Log in and create account |
+| `src/lib/pages.ts` | What a saved page looks like |
+| `src/lib/useAutosave.ts` | Saves a page a moment after each change, in order |
+| `src/lib/supabase/` | Connecting to Supabase (server, browser, login check) |
 | `src/middleware.ts` | Keeps you logged in and protects every page |
+| `src/components/board/Board.tsx` | The white board |
+| `src/components/board/model.ts` | What a board is made of (circles, squares, texts, lines, presets) |
+| `src/components/board/constants.ts` | Sizes, colours and limits |
+| `src/components/board/TextEditor.tsx` | Typing text (lists, Tab, sizes, bold, colours) |
+| `src/components/board/richText.ts` | Text with parts in different sizes, bold and colours |
+| `src/components/board/snapping.ts` | Lining things up while dragging |
+| `src/components/board/SideMenu.tsx` | The menu opened with v (presets) |
+| `src/components/board/LineMenu.tsx` | The box beside a clicked line (Time, Angle, Text) |
+| `src/components/board/geometry.ts` | Maths for bent lines and selection boxes |
+| `src/components/board/timeline.ts` | Works out the dates along a timeline |
+| `src/components/board/input.ts` | Mouse wheel vs trackpad, straight-line snapping |
+| `src/components/board/icons.tsx` | Small menu icons |
+
+`npm run format` tidies the code into one consistent style.

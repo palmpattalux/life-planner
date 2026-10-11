@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Board, EMPTY_BOARD, type BoardData, type Preset } from "@/components/Board";
+import { useMemo, useState } from "react";
+import { Board } from "@/components/board/Board";
+import { EMPTY_BOARD, type BoardData, type Preset } from "@/components/board/model";
 import { createClient } from "@/lib/supabase/client";
 import { statusText, useAutosave } from "@/lib/useAutosave";
 
@@ -21,7 +22,7 @@ export function BoardPage({
   const { save, status } = useAutosave(id);
   const [title, setTitle] = useState(initialTitle);
   const [presets, setPresets] = useState(initialPresets);
-  const supabase = createClient();
+  const supabase = useMemo(createClient, []);
 
   async function savePreset(data: BoardData) {
     // Named Preset 1, Preset 2, ... after the highest number so far.

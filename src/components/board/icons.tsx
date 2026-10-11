@@ -82,7 +82,15 @@ export function ChecklistIcon() {
 // The tick drawn inside a checked checklist box.
 export function CheckMark({ color }: { color: string }) {
   return (
-    <svg viewBox="0 0 10 10" className="absolute inset-0 size-full" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      viewBox="0 0 10 10"
+      className="absolute inset-0 size-full"
+      fill="none"
+      stroke={color}
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M2.2 5.2 L4.2 7.2 L7.8 3" />
     </svg>
   );

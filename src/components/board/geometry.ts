@@ -158,7 +158,8 @@ export function offsetPolyline(points: Point[], by: number): Point[] {
   return points.map((p, i) => {
     const before = i > 0 ? side(points[i - 1], p) : null;
     const after = i < points.length - 1 ? side(p, points[i + 1]) : null;
-    const n = before && after ? unit({ x: 0, y: 0 }, { x: before.x + after.x, y: before.y + after.y }) : (before ?? after)!;
+    const n =
+      before && after ? unit({ x: 0, y: 0 }, { x: before.x + after.x, y: before.y + after.y }) : (before ?? after)!;
     return { x: p.x + n.x * by, y: p.y + n.y * by };
   });
 }

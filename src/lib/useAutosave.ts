@@ -15,19 +15,25 @@ export function useAutosave(pageId: string) {
   const pending = useRef<Patch | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function flush() {
+  // Saves run one after another, so an older save can never land after a
+  // newer one and undo it.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+
+  function flush() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     const patch = pending.current;
     if (!patch) return;
     pending.current = null;
     setStatus("saving");
-    const { error } = await createClient()
-      .from("pages")
-      .update({ ...patch, updated_at: new Date().toISOString() })
-      .eq("id", pageId);
-    // Newer changes may have come in while saving; they have their own save.
-    if (!pending.current) setStatus(error ? "error" : "saved");
+    queue.current = queue.current.then(async () => {
+      const { error } = await createClient()
+        .from("pages")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", pageId);
+      // Newer changes may have come in while saving; they have their own save.
+      if (!pending.current) setStatus(error ? "error" : "saved");
+    });
   }
 
   function save(patch: Patch) {
@@ -38,11 +44,11 @@ export function useAutosave(pageId: string) {
   }
 
   useEffect(() => {
-    const onLeave = () => void flush();
+    const onLeave = () => flush();
     window.addEventListener("beforeunload", onLeave);
     return () => {
       window.removeEventListener("beforeunload", onLeave);
-      void flush();
+      flush();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

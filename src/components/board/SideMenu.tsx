@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Preset } from "./Board";
+import type { Preset } from "./model";
 
 export const SIDE_MENU_W = 256;
 

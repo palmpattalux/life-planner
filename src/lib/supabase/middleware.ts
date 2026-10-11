@@ -12,35 +12,25 @@ export async function updateSession(request: NextRequest) {
   const missing = missingEnv();
   if (missing.length > 0) {
     return new NextResponse(
-      "Setup needed in Vercel -> Settings -> Environment Variables:\n- " +
-        missing.join("\n- ") +
-        "\nThen redeploy.",
+      "Setup needed in Vercel -> Settings -> Environment Variables:\n- " + missing.join("\n- ") + "\nThen redeploy.",
       { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }
 
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    supabaseUrl!,
-    supabaseKey!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
+  const supabase = createServerClient(supabaseUrl!, supabaseKey!, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
       },
     },
-  );
+  });
 
   const {
     data: { user },

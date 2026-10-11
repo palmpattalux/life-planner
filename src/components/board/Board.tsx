@@ -2,6 +2,40 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
+  ATTACH_DISTANCE,
+  BOARD_H,
+  BOARD_W,
+  CHECKED,
+  CIRCLE_SIZE,
+  CLICK_SLOP,
+  DOT_SPACING,
+  INK,
+  LINE_LABEL_SIZE,
+  MAJOR_TICK,
+  MAX_CIRCLE,
+  MAX_SCALE,
+  MAX_TEXT,
+  MAX_UNDO,
+  MIN_CIRCLE,
+  MIN_SCALE,
+  MIN_TEXT,
+  PHASE_GAP,
+  PHASE_GAP_PAST_LABELS,
+  PHASE_ORANGE,
+  PIN_GROW,
+  RESIZE_UNDO_GAP_MS,
+  SELECT_BLUE,
+  SNAP_DISTANCE,
+  SNAP_PINK,
+  squareLabelSize,
+  TEXT_COLORS,
+  TEXT_SIZE,
+  TICK,
+  TICK_LABEL_GAP,
+  TICK_LABEL_SIZE,
+  UNCHECKED,
+} from "./constants";
+import {
   distanceAlong,
   offsetPolyline,
   subPolyline,
@@ -18,173 +52,40 @@ import {
   type Point,
 } from "./geometry";
 import { CheckMark, ChecklistIcon, LinkButton, PinIcon, SquareIcon } from "./icons";
+import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
-import { SIDE_MENU_W, SideMenu } from "./SideMenu";
+import { keptGuides, snapBoxes, type SnapBox } from "./snapping";
 import {
-  domToRuns,
-  isPlain,
-  mergeRuns,
-  runLines,
-  runsToDom,
-  scaleSelection,
-  sliceRuns,
-  type Run,
-} from "./richText";
-import { tickValue, timelineTicks, type Timeline } from "./timeline";
+  allKeys,
+  EMPTY_BOARD,
+  idsOf,
+  keyOf,
+  maxId,
+  type BoardData,
+  type Circle,
+  type End,
+  type Key,
+  type Kind,
+  type Line,
+  type Pin,
+  type Preset,
+  type Square,
+  type Text,
+} from "./model";
+import { isPlain, mergeRuns, runLines, sliceRuns, type Run } from "./richText";
+import { SIDE_MENU_W, SideMenu } from "./SideMenu";
+import { TextEditor } from "./TextEditor";
+import { tickValue, timelineTicks } from "./timeline";
 
 type View = { x: number; y: number; scale: number };
-// `group`: things grouped together share a group number and are selected
-// and moved as one.
-type Circle = { id: number; x: number; y: number; size: number; group?: number };
-// A square outline (made from a circle); its corners can be dragged to make
-// it any rectangle. Only its outline can be clicked. `label` is the text at
-// its outer top left, in the square's colour. x, y is the centre.
-type Square = { id: number; x: number; y: number; w: number; h: number; color: string; label?: string; group?: number };
-type Text = {
-  id: number;
-  x: number; // centre
-  y: number;
-  text: string;
-  fontSize: number;
-  color: string;
-  bold: boolean;
-  // Parts with their own size, boldness or colour. Left out when the whole
-  // text looks the same; otherwise the runs' text joined is `text`.
-  runs?: Run[];
-  group?: number;
-};
-// A line end is either a free point or attached to a circle or text
-// (fromItem / toItem), in which case it sits at that item's centre and
-// follows it. `bends` are the angle points between the two ends.
-// A line with `time` is drawn as a timeline: a ruler of evenly spaced dates.
-type Line = {
-  id: number;
-  from: Point;
-  to: Point;
-  fromItem?: number;
-  toItem?: number;
-  bends?: Point[];
-  fromArrow?: boolean;
-  toArrow?: boolean;
-  time?: Timeline;
-  label?: string; // text in the middle of the line
-  color?: string; // the line, its arrowheads and timeline marks (default ink)
-  // Pinned timeline marks, by their value (as in `time`): drawn bigger
-  // (when bold) and in their own colour.
-  pins?: Pin[];
-  group?: number;
-};
-type Pin = { value: string; bold: boolean; color: string };
-type End = "from" | "to";
-// Everything on the board. Kept as one object so every change can be undone
-// (and, later, saved) in one piece.
-export type BoardData = { circles: Circle[]; squares: Square[]; texts: Text[]; lines: Line[] };
-export const EMPTY_BOARD: BoardData = { circles: [], squares: [], texts: [], lines: [] };
-// A saved group of things that can be placed on any board again.
-export type Preset = { id: string; name: string; data: BoardData };
-
-// The biggest id or group number used on a board, so new ones don't clash.
-function maxId(data: BoardData) {
-  const items = [...data.circles, ...data.squares, ...data.texts, ...data.lines];
-  return Math.max(0, ...items.flatMap((i) => [i.id, i.group ?? 0]));
-}
-type Kind = "circle" | "square" | "text" | "line";
-// Selected things, as "circle:3", "text:7", "line:2".
-type Key = `${Kind}:${number}`;
 // "selection": pressing inside the selection box, on empty board.
-// A circle, square or text as a box, for snapping things in line. Lines
-// snap by their points (ends, bends and timeline marks) as zero-size boxes,
-// and only to other lines' points (`line: true`).
-type SnapBox = { key: Key; x: number; y: number; w: number; h: number; line?: boolean };
 type DragKind = Kind | End | "bend" | "corner" | "selection";
-
-const CIRCLE_SIZE = 64;
-const MIN_CIRCLE = 8;
-const MAX_CIRCLE = 2000;
-const TEXT_SIZE = 24;
-const MIN_TEXT = 6;
-const MAX_TEXT = 800;
-const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
-const INK = "#1c1917";
-const SELECT_BLUE = "#3b82f6";
-const SNAP_PINK = "#ec4899";
-// Checklist boxes are stored as these characters at the start of a text line.
-const UNCHECKED = "☐";
-const CHECKED = "☑";
-// Pressing Tab while typing moves the line right by this much.
-const INDENT = "    ";
-const PHASE_ORANGE = "#f97316";
-// How far a new phase sits from the timeline it was made from, in board units.
-const PHASE_GAP = 48;
-const PHASE_GAP_PAST_LABELS = 72;
-// How much bigger a bold pinned timeline mark is drawn.
-const PIN_GROW = 1.5;
-// Moving less than this many pixels between press and release counts as a click.
-const CLICK_SLOP = 4;
-// Scroll steps closer together than this are one resize, undone in one go.
-const RESIZE_UNDO_GAP_MS = 500;
-const MAX_UNDO = 200;
-
-// The board itself, in board units. Everything lives inside it.
-const BOARD_W = 10000;
-const BOARD_H = 10000;
-const DOT_SPACING = 24;
-const MIN_SCALE = 0.06;
-const MAX_SCALE = 4;
-// Timeline ruler sizes, in board units.
-const TICK = 6;
-const MAJOR_TICK = 10;
-const TICK_LABEL_SIZE = 11;
-const TICK_LABEL_GAP = 56; // roughly the width of one label
-// Text in the middle of a line, in board units.
-const LINE_LABEL_SIZE = 16;
-// How close (in screen pixels, beyond the circle's edge) a dragged line end
-// has to be to a circle to attach to it.
-const ATTACH_DISTANCE = 16;
-// How close (in screen pixels) a dragged square's edge or middle has to be to
-// another square's to snap in line with it.
-const SNAP_DISTANCE = 8;
-
-// Browsers don't say whether a wheel event came from a mouse or a trackpad.
-// Trackpads send pixel deltas that are small, fractional or sideways; mouse
-// wheels send big whole-number steps straight up or down.
-function isTrackpadSwipe(e: WheelEvent) {
-  if (e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return false;
-  if (e.deltaX !== 0) return true;
-  return !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 50;
-}
-
-// Square labels grow and shrink with their square.
-const squareLabelSize = (size: number) => Math.max(8, size / 4);
-// A point nearly level or upright with `anchor` (within a few degrees) is put
-// exactly level or upright with it, so lines snap straight.
-const STRAIGHT_SNAP_DEG = 3;
-function straighten(p: Point, anchor: Point): Point {
-  const dx = Math.abs(p.x - anchor.x);
-  const dy = Math.abs(p.y - anchor.y);
-  const limit = Math.tan((STRAIGHT_SNAP_DEG * Math.PI) / 180);
-  if (dx > 0 && dy / dx < limit) return { x: p.x, y: anchor.y };
-  if (dy > 0 && dx / dy < limit) return { x: anchor.x, y: p.y };
-  return p;
-}
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const keyOf = (kind: Kind, id: number): Key => `${kind}:${id}`;
-// Every thing on the board, as keys.
-const allKeys = (d: BoardData): Key[] => [
-  ...d.circles.map((c) => keyOf("circle", c.id)),
-  ...d.squares.map((q) => keyOf("square", q.id)),
-  ...d.texts.map((t) => keyOf("text", t.id)),
-  ...d.lines.map((l) => keyOf("line", l.id)),
-];
-const idsOf = (sel: Key[], kind: Kind) =>
-  new Set(sel.filter((k) => k.startsWith(kind + ":")).map((k) => Number(k.split(":")[1])));
 
 // A huge white board with faint grey dots and a light grey edge.
 // - Two-finger swipe moves around; pinch or mouse wheel zooms.
 // - "b" adds a circle at the cursor. Hold "n" to draw a line; let go to confirm.
 // - Drag circles, texts and lines to move them.
-// - Drag on empty board to draw a selection box: everything fully inside it is
+// - Drag on empty board to draw a selection box: everything it touches is
 //   selected and can be moved together (drag any of them) or resized together
 //   (scroll wheel / trackpad).
 // - Click a circle or text to select it and open its menu. While selected, the
@@ -202,6 +103,7 @@ const idsOf = (sel: Key[], kind: Kind) =>
 // - "v" opens the menu on the right, which holds the saved presets.
 // The board starts from `initial` and reports every change to `onChange`, so
 // the page around it can save it. Presets are kept by the page too.
+// README.md lists every control in full.
 export function Board({
   initial = EMPTY_BOARD,
   onChange,
@@ -290,6 +192,9 @@ export function Board({
     startX: number;
     startY: number;
     moved: boolean;
+    // Everything's snap boxes, worked out once when the drag starts moving
+    // (reading text sizes from the page on every mouse move is slow).
+    snaps?: SnapBox[];
   } | null>(null);
   const nextId = useRef(maxId(initial) + 1);
   // Where a line was last pressed, so "Angle" adds its bend on that side.
@@ -326,7 +231,9 @@ export function Board({
 
   function itemPos(id: number | undefined, data: BoardData = board): Point | undefined {
     const item =
-      data.circles.find((c) => c.id === id) ?? data.texts.find((t) => t.id === id) ?? data.squares.find((q) => q.id === id);
+      data.circles.find((c) => c.id === id) ??
+      data.texts.find((t) => t.id === id) ??
+      data.squares.find((q) => q.id === id);
     return item && { x: item.x, y: item.y };
   }
 
@@ -370,7 +277,9 @@ export function Board({
     const id = Number(idStr);
     if (kind === "circle") {
       const c = data.circles.find((c) => c.id === id);
-      return c ? { minX: c.x - c.size / 2, minY: c.y - c.size / 2, maxX: c.x + c.size / 2, maxY: c.y + c.size / 2 } : null;
+      return c
+        ? { minX: c.x - c.size / 2, minY: c.y - c.size / 2, maxX: c.x + c.size / 2, maxY: c.y + c.size / 2 }
+        : null;
     }
     if (kind === "square") {
       const q = data.squares.find((q) => q.id === id);
@@ -415,66 +324,14 @@ export function Board({
     return [...pts, ...marks];
   }
 
+  // How close (in board units) things have to be to snap, at this zoom.
+  const snapReach = () => SNAP_DISTANCE / viewRef.current.scale;
+
   // Snap one dragged line point (an end or bend) in line with other lines'
   // points. Returns where it goes and the guide lines.
-  function snapLinePoint(lineId: number, p: Point, data: BoardData) {
-    const snap = snapBoxes([{ key: keyOf("line", lineId), ...p, w: 0, h: 0, line: true }], 0, 0, snapBoxesOf(data));
+  function snapLinePoint(lineId: number, p: Point, all: SnapBox[]) {
+    const snap = snapBoxes([{ key: keyOf("line", lineId), ...p, w: 0, h: 0, line: true }], 0, 0, all, snapReach());
     return { at: { x: p.x + snap.dx, y: p.y + snap.dy }, lines: snap.lines };
-  }
-
-  // How far to nudge things being dragged (by dx, dy) so an edge or middle of
-  // one of them lines up with an edge or middle of another circle, square or
-  // text, like in Canva, and the guide lines to show. They all move together.
-  function snapBoxes(moving: SnapBox[], dx: number, dy: number, all: SnapBox[]) {
-    const reach = SNAP_DISTANCE / viewRef.current.scale;
-    const movingKeys = new Set(moving.map((q) => q.key));
-    const others = all.filter((s) => !movingKeys.has(s.key));
-    const lineOf = (s: SnapBox, key: "x" | "y", size: "w" | "h") => [s[key] - s[size] / 2, s[key], s[key] + s[size] / 2];
-    const axis = (key: "x" | "y", size: "w" | "h", shift: number) => {
-      let best: { delta: number; at: number } | null = null;
-      for (const q of moving) {
-        const mine = lineOf({ ...q, [key]: q[key] + shift }, key, size);
-        for (const o of others) {
-          // Lines snap to lines; circles, squares and texts to each other.
-          if (!!o.line !== !!q.line) continue;
-          for (const target of lineOf(o, key, size)) {
-            for (const m of mine) {
-              const delta = target - m;
-              if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, at: target };
-            }
-          }
-        }
-      }
-      return best;
-    };
-    const sx = axis("x", "w", dx);
-    const sy = axis("y", "h", dy);
-    const ndx = dx + (sx?.delta ?? 0);
-    const ndy = dy + (sy?.delta ?? 0);
-    const placed = [...moving.map((q) => ({ ...q, x: q.x + ndx, y: q.y + ndy })), ...others];
-    // A guide runs across every square on that line.
-    const lines: { a: Point; b: Point }[] = [];
-    if (sx) {
-      const ss = placed.filter((s) => lineOf(s, "x", "w").some((v) => Math.abs(v - sx.at) < 0.5));
-      lines.push({
-        a: { x: sx.at, y: Math.min(...ss.map((s) => s.y - s.h / 2)) },
-        b: { x: sx.at, y: Math.max(...ss.map((s) => s.y + s.h / 2)) },
-      });
-    }
-    if (sy) {
-      const ss = placed.filter((s) => lineOf(s, "y", "h").some((v) => Math.abs(v - sy.at) < 0.5));
-      lines.push({
-        a: { x: Math.min(...ss.map((s) => s.x - s.w / 2)), y: sy.at },
-        b: { x: Math.max(...ss.map((s) => s.x + s.w / 2)), y: sy.at },
-      });
-    }
-    return { dx: ndx, dy: ndy, lines };
-  }
-
-  // The guide lines still true after a snapped point was moved again
-  // (vertical guides need the same x, horizontal ones the same y).
-  function keptGuides(guides: { a: Point; b: Point }[], snapped: Point, final: Point) {
-    return guides.filter((g) => (g.a.x === g.b.x ? final.x === snapped.x : final.y === snapped.y));
   }
 
   // The circle or text (topmost first) that this board point is inside.
@@ -566,12 +423,7 @@ export function Board({
 
   // Add a copy of `items` centred on `at`, with new ids, and select it.
   function paste(items: BoardData, at: Point) {
-    const pts = [
-      ...items.circles,
-      ...items.squares,
-      ...items.texts,
-      ...items.lines.flatMap((l) => pointsOf(l)),
-    ];
+    const pts = [...items.circles, ...items.squares, ...items.texts, ...items.lines.flatMap((l) => pointsOf(l))];
     const box = boxAround(pts);
     const dx = at.x - (box.minX + box.maxX) / 2;
     const dy = at.y - (box.minY + box.maxY) / 2;
@@ -900,21 +752,27 @@ export function Board({
     const dy = at.y - d.start.y;
     const move = (pt: Point) => ({ x: pt.x + dx, y: pt.y + dy });
     const o = d.orig;
+    const all = (d.snaps ??= snapBoxesOf(o));
 
     // Several things selected: move them all together. Squares among them
     // snap to the other squares, nudging the whole lot.
     if (d.many) {
-      const all = snapBoxesOf(o);
-      const moving = all.filter((s) => d.many!.includes(s.key));
-      const snap = moving.length ? snapBoxes(moving, dx, dy, all) : { dx, dy, lines: [] };
+      const many = new Set(d.many);
+      const moving = all.filter((s) => many.has(s.key));
+      const snap = moving.length ? snapBoxes(moving, dx, dy, all, snapReach()) : { dx, dy, lines: [] };
       setSnapGuides(snap.lines);
       moveMany(d.many, snap.dx, snap.dy, o);
       return;
     }
     if (d.kind === "circle" || d.kind === "text" || d.kind === "square") {
       const key = keyOf(d.kind, d.id);
-      const all = snapBoxesOf(o);
-      const snap = snapBoxes(all.filter((s) => s.key === key), dx, dy, all);
+      const snap = snapBoxes(
+        all.filter((s) => s.key === key),
+        dx,
+        dy,
+        all,
+        snapReach(),
+      );
       setSnapGuides(snap.lines);
       moveMany([key], snap.dx, snap.dy, o);
       return;
@@ -938,12 +796,20 @@ export function Board({
       return;
     }
     if (d.kind === "selection") return;
-    const line = resolve(o.lines.find((l) => l.id === d.id)!, o);
+    const line = resolve(
+      o.lines.find((l) => l.id === d.id)!,
+      o,
+    );
     let next: Line;
     if (d.kind === "line") {
       // Its ends, bends and marks snap in line with other lines' points.
-      const all = snapBoxesOf(o);
-      const snap = snapBoxes(all.filter((b) => b.key === keyOf("line", d.id)), dx, dy, all);
+      const snap = snapBoxes(
+        all.filter((b) => b.key === keyOf("line", d.id)),
+        dx,
+        dy,
+        all,
+        snapReach(),
+      );
       setSnapGuides(snap.lines);
       const shift = (pt: Point) => ({ x: pt.x + snap.dx, y: pt.y + snap.dy });
       // Moving the whole line takes it off anything it was attached to.
@@ -960,7 +826,7 @@ export function Board({
       const pts = pointsOf(line);
       const i = d.index! + 1;
       // Snap in line with other lines' points; nearly straight wins.
-      const snapped = snapLinePoint(d.id, move(pts[i]), o);
+      const snapped = snapLinePoint(d.id, move(pts[i]), all);
       const at = straighten(straighten(snapped.at, pts[i - 1]), pts[i + 1]);
       setSnapGuides(keptGuides(snapped.lines, snapped.at, at));
       next = { ...line, bends: line.bends!.map((p, j) => (j === d.index ? at : p)) };
@@ -971,7 +837,7 @@ export function Board({
       const pts = pointsOf(line);
       const neighbour = end === "from" ? pts[1] : pts[pts.length - 2];
       // Snap in line with other lines' points; nearly straight wins.
-      const snapped = snapLinePoint(d.id, move(line[end]), o);
+      const snapped = snapLinePoint(d.id, move(line[end]), all);
       const pos = straighten(snapped.at, neighbour);
       const scale = viewRef.current.scale;
       // Nearest circle or text within reach (distance from its edge).
@@ -979,10 +845,11 @@ export function Board({
       const near = [
         ...o.circles.map((c) => ({ c, gap: Math.hypot(c.x - pos.x, c.y - pos.y) - c.size / 2 })),
         ...o.texts.map((t) => {
-          const b = boxOf(keyOf("text", t.id), o);
-          const gap = b
-            ? Math.hypot(Math.max(b.minX - pos.x, 0, pos.x - b.maxX), Math.max(b.minY - pos.y, 0, pos.y - b.maxY))
-            : Infinity;
+          const b = all.find((s) => s.key === keyOf("text", t.id))!;
+          const gap = Math.hypot(
+            Math.max(b.x - b.w / 2 - pos.x, 0, pos.x - b.x - b.w / 2),
+            Math.max(b.y - b.h / 2 - pos.y, 0, pos.y - b.y - b.h / 2),
+          );
           return { c: t, gap };
         }),
       ]
@@ -1060,7 +927,13 @@ export function Board({
     // Inside the box around several selected things: drag them all.
     const at = toBoard(e.clientX, e.clientY);
     const pad = 6 / viewRef.current.scale;
-    if (groupBox && at.x >= groupBox.minX - pad && at.x <= groupBox.maxX + pad && at.y >= groupBox.minY - pad && at.y <= groupBox.maxY + pad) {
+    if (
+      groupBox &&
+      at.x >= groupBox.minX - pad &&
+      at.x <= groupBox.maxX + pad &&
+      at.y >= groupBox.minY - pad &&
+      at.y <= groupBox.maxY + pad
+    ) {
       drag.current = {
         kind: "selection",
         id: -1,
@@ -1132,7 +1005,10 @@ export function Board({
     setBoard((b) => ({
       ...b,
       circles: b.circles.filter((x) => x.id !== c.id),
-      squares: [...b.squares, { id: c.id, x: c.x, y: c.y, w: c.size, h: c.size, color: TEXT_COLORS[0], group: c.group }],
+      squares: [
+        ...b.squares,
+        { id: c.id, x: c.x, y: c.y, w: c.size, h: c.size, color: TEXT_COLORS[0], group: c.group },
+      ],
     }));
     setSelection([keyOf("square", c.id)]);
   }
@@ -1434,11 +1310,7 @@ export function Board({
           }}
         />
 
-        <svg
-          className="pointer-events-none absolute left-0 top-0 overflow-visible"
-          width={BOARD_W}
-          height={BOARD_H}
-        >
+        <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={BOARD_W} height={BOARD_H}>
           <defs>
             {/* One arrowhead per line colour. */}
             {TEXT_COLORS.map((color, i) => (
@@ -1456,50 +1328,52 @@ export function Board({
               </marker>
             ))}
           </defs>
-          {lines.map((l) => resolve(l)).map((l) => {
-            const pts = drawPoints(l);
-            const isSelected = selection.includes(keyOf("line", l.id));
-            return (
-              <g key={l.id}>
-                {isSelected && selection.length > 1 && (
+          {lines
+            .map((l) => resolve(l))
+            .map((l) => {
+              const pts = drawPoints(l);
+              const isSelected = selection.includes(keyOf("line", l.id));
+              return (
+                <g key={l.id}>
+                  {isSelected && selection.length > 1 && (
+                    <polyline
+                      points={toPolyline(pts)}
+                      fill="none"
+                      stroke={SELECT_BLUE}
+                      strokeOpacity={0.35}
+                      strokeWidth={px(6)}
+                      strokeLinejoin="round"
+                    />
+                  )}
                   <polyline
+                    data-line="line"
                     points={toPolyline(pts)}
                     fill="none"
-                    stroke={SELECT_BLUE}
-                    strokeOpacity={0.35}
-                    strokeWidth={px(6)}
+                    stroke={l.color ?? INK}
+                    strokeWidth={2}
+                    strokeLinecap="round"
                     strokeLinejoin="round"
+                    markerStart={l.fromArrow ? arrowheadFor(l) : undefined}
+                    markerEnd={l.toArrow ? arrowheadFor(l) : undefined}
                   />
-                )}
-                <polyline
-                  data-line="line"
-                  points={toPolyline(pts)}
-                  fill="none"
-                  stroke={l.color ?? INK}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  markerStart={l.fromArrow ? arrowheadFor(l) : undefined}
-                  markerEnd={l.toArrow ? arrowheadFor(l) : undefined}
-                />
-                {timelineMarks(l, pts)}
-                {/* Wider invisible stroke so the line is easy to grab. */}
-                <polyline
-                  data-line-hit={l.id}
-                  points={toPolyline(pts)}
-                  fill="none"
-                  stroke="transparent"
-                  strokeWidth={px(14)}
-                  className="cursor-grab active:cursor-grabbing"
-                  style={{ pointerEvents: "stroke" }}
-                  onPointerDown={(e) => {
-                    linePressedAt.current = { id: l.id, at: toBoard(e.clientX, e.clientY) };
-                    startDrag(e, "line", l.id);
-                  }}
-                />
-              </g>
-            );
-          })}
+                  {timelineMarks(l, pts)}
+                  {/* Wider invisible stroke so the line is easy to grab. */}
+                  <polyline
+                    data-line-hit={l.id}
+                    points={toPolyline(pts)}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={px(14)}
+                    className="cursor-grab active:cursor-grabbing"
+                    style={{ pointerEvents: "stroke" }}
+                    onPointerDown={(e) => {
+                      linePressedAt.current = { id: l.id, at: toBoard(e.clientX, e.clientY) };
+                      startDrag(e, "line", l.id);
+                    }}
+                  />
+                </g>
+              );
+            })}
           {phase &&
             (() => {
               const l = lines.find((x) => x.id === phase.lineId);
@@ -1568,7 +1442,14 @@ export function Board({
             >
               <svg className="absolute inset-0 overflow-visible" width={q.w} height={q.h}>
                 {inGroup && (
-                  <rect width={q.w} height={q.h} fill="none" stroke={SELECT_BLUE} strokeOpacity={0.35} strokeWidth={px(6)} />
+                  <rect
+                    width={q.w}
+                    height={q.h}
+                    fill="none"
+                    stroke={SELECT_BLUE}
+                    strokeOpacity={0.35}
+                    strokeWidth={px(6)}
+                  />
                 )}
                 <rect x={1} y={1} width={q.w - 2} height={q.h - 2} fill="none" stroke={q.color} strokeWidth={2} />
                 {/* Only the outline can be grabbed, not the space inside. */}
@@ -1677,11 +1558,7 @@ export function Board({
             lineHeight: 1.2,
           };
           return (
-            <div
-              key={t.id}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: t.x, top: t.y }}
-            >
+            <div key={t.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: t.x, top: t.y }}>
               {isEditing ? (
                 <TextEditor
                   initial={t.text + editingAppend.current}
@@ -1906,12 +1783,18 @@ export function Board({
                         viewBox="0 0 16 16"
                         style={{ transform: `rotate(${Math.atan2(d.y, d.x)}rad)` }}
                       >
-                        <path d="M2 8 H12 M8 4 L12 8 L8 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        <path
+                          d="M2 8 H12 M8 4 L12 8 L8 12"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
                       </svg>
                     </button>
                   );
                 })}
-
               </>
             );
           })()}
@@ -2170,189 +2053,6 @@ export function Board({
           }}
         />
       )}
-    </div>
-  );
-}
-
-// The text typed so far on the caret's line, up to the caret.
-function textBeforeCaret(el: HTMLElement): string {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return "";
-  const range = document.createRange();
-  range.setStart(el, 0);
-  range.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
-  let text = "";
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) text += node.textContent;
-    else if (node.nodeName === "BR") text += "\n";
-    else node.childNodes.forEach(walk);
-  };
-  walk(range.cloneContents());
-  return text.slice(text.lastIndexOf("\n") + 1);
-}
-
-// The text being typed. Enter starts a new line; clicking elsewhere confirms it.
-// Tab moves the caret's line right and Shift+Tab moves it back. With `lists`,
-// Enter on a checklist line starts the next line with a box, and on a numbered
-// line with the next number. Enter on a line holding only the box or number
-// ends the list. With `initialRuns`, highlighted words can get their own size
-// (scroll wheel / trackpad), boldness (Ctrl+B or the B button) and colour from
-// a bar that shows above the text while something is highlighted.
-function TextEditor({
-  initial,
-  initialRuns,
-  style,
-  lists = false,
-  onConfirm,
-}: {
-  initial: string;
-  initialRuns?: Run[];
-  style: React.CSSProperties;
-  lists?: boolean;
-  onConfirm: (value: string, runs?: Run[]) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const rich = !!initialRuns;
-  const [highlight, setHighlight] = useState<{ bold: boolean } | null>(null);
-
-  useEffect(() => {
-    const el = ref.current!;
-    if (initialRuns) runsToDom(el, initialRuns);
-    else el.textContent = initial;
-    el.focus({ preventScroll: true });
-    // Put the cursor at the end.
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    // Only on mount: the text is typed into the element directly.
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!rich) return;
-    const el = ref.current!;
-    const highlighted = () => {
-      const sel = window.getSelection();
-      return !!sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.getRangeAt(0).commonAncestorContainer);
-    };
-    // Show the B / colour bar while part of the text is highlighted.
-    function onSelectionChange() {
-      setHighlight(highlighted() ? { bold: document.queryCommandState("bold") } : null);
-    }
-    // Scroll wheel / trackpad over highlighted words resizes just those words.
-    function onWheel(e: WheelEvent) {
-      if (!highlighted()) return;
-      e.preventDefault();
-      e.stopPropagation();
-      scaleSelection(el, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.002)));
-    }
-    document.addEventListener("selectionchange", onSelectionChange);
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      document.removeEventListener("selectionchange", onSelectionChange);
-      el.removeEventListener("wheel", onWheel);
-    };
-  }, [rich]);
-
-  function format(command: "bold" | "foreColor", value?: string) {
-    document.execCommand("styleWithCSS", false, "true");
-    document.execCommand(command, false, value);
-    setHighlight({ bold: document.queryCommandState("bold") });
-  }
-
-  return (
-    <div className="relative">
-      {highlight && (
-        <div
-          data-format-bar
-          // Keep the highlight: clicking the bar must not take focus from the text.
-          onMouseDown={(e) => e.preventDefault()}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="absolute left-0 flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-stone-200 bg-white p-1.5 shadow-lg"
-          style={{ bottom: "100%", marginBottom: 8, fontSize: 14, fontWeight: 400, lineHeight: 1 }}
-        >
-          <button
-            aria-label="Bold"
-            onClick={() => format("bold")}
-            className={`flex size-6 items-center justify-center rounded text-sm font-bold text-stone-900 ${highlight.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
-          >
-            B
-          </button>
-          {TEXT_COLORS.map((color) => (
-            <button
-              key={color}
-              aria-label={`Colour ${color}`}
-              onClick={() => format("foreColor", color)}
-              className="size-5 rounded-full"
-              style={{ background: color }}
-            />
-          ))}
-        </div>
-      )}
-      <div
-        ref={ref}
-        data-text-editor
-        contentEditable
-        suppressContentEditableWarning
-        onPointerDown={(e) => e.stopPropagation()}
-        onPaste={(e) => {
-          // Paste words only, not another page's styling.
-          e.preventDefault();
-          document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
-        }}
-        onKeyDown={(e) => {
-          if (rich && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
-            e.preventDefault();
-            format("bold");
-            return;
-          }
-          if (e.key === "Tab") {
-            e.preventDefault();
-            const before = textBeforeCaret(e.currentTarget);
-            const sel = window.getSelection()!;
-            // Step to the start of the line, add or remove the indent there, then
-            // step back to where the caret was.
-            const moveCaret = (dir: "backward" | "forward", n: number) => {
-              for (let i = 0; i < n; i++) sel.modify("move", dir, "character");
-            };
-            moveCaret("backward", before.length);
-            if (!e.shiftKey) {
-              document.execCommand("insertText", false, INDENT);
-              moveCaret("forward", before.length);
-              return;
-            }
-            const remove = Math.min(before.match(/^ */)![0].length, INDENT.length);
-            for (let i = 0; i < remove; i++) document.execCommand("forwardDelete");
-            moveCaret("forward", before.length - remove);
-            return;
-          }
-          if (e.key === "Enter") {
-            e.preventDefault();
-            const full = lists ? textBeforeCaret(e.currentTarget) : "";
-            const indent = full.match(/^ */)![0];
-            const line = full.slice(indent.length);
-            const number = line.match(/^(\d+)\. /);
-            const marker = /^[☐☑] /.test(line) ? `${UNCHECKED} ` : number ? `${Number(number[1]) + 1}. ` : "";
-            if (marker && line === (number ? number[0] : line.slice(0, 2))) {
-              // An empty list line: remove its box or number to end the list.
-              for (let i = 0; i < line.length; i++) document.execCommand("delete");
-              return;
-            }
-            document.execCommand("insertLineBreak");
-            // A list line keeps its indent on the next line.
-            if (marker) document.execCommand("insertText", false, indent + marker);
-          }
-        }}
-        onBlur={(e) => {
-          if (!rich) return onConfirm(e.currentTarget.innerText);
-          const runs = domToRuns(e.currentTarget);
-          onConfirm(runs.map((r) => r.text).join(""), runs);
-        }}
-        className="min-w-[1ch] cursor-text whitespace-pre bg-white px-1 outline-none"
-        style={{ ...style, userSelect: "text", caretColor: style.color }}
-      />
     </div>
   );
 }

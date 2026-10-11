@@ -18,10 +18,7 @@ function sameStyle(a: Run, b: Run) {
 }
 
 export function isPlain(runs: Run[]) {
-  return runs.every(
-    (r) =>
-      r.scale === undefined && r.bold === undefined && r.color === undefined,
-  );
+  return runs.every((r) => r.scale === undefined && r.bold === undefined && r.color === undefined);
 }
 
 // Join neighbouring runs with the same style and drop empty ones.
@@ -43,8 +40,7 @@ export function sliceRuns(runs: Run[], from: number, to = Infinity): Run[] {
   for (const r of runs) {
     const start = Math.max(from, at);
     const end = Math.min(to, at + r.text.length);
-    if (end > start)
-      out.push({ ...r, text: r.text.slice(start - at, end - at) });
+    if (end > start) out.push({ ...r, text: r.text.slice(start - at, end - at) });
     at += r.text.length;
   }
   return out;
@@ -108,8 +104,7 @@ function styleOf(node: Node, el: HTMLElement): Omit<Run, "text"> {
 export function domToRuns(el: HTMLElement): Run[] {
   const runs: Run[] = [];
   const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE)
-      runs.push({ text: node.textContent ?? "", ...styleOf(node, el) });
+    if (node.nodeType === Node.TEXT_NODE) runs.push({ text: node.textContent ?? "", ...styleOf(node, el) });
     else if (node.nodeName === "BR") runs.push({ text: "\n" });
     else node.childNodes.forEach(walk);
   };
@@ -128,10 +123,7 @@ export function scaleSelection(el: HTMLElement, factor: number) {
   // characters change.
   let { startContainer: start, startOffset, endContainer: end } = range;
   const { endOffset } = range;
-  if (
-    end.nodeType === Node.TEXT_NODE &&
-    endOffset < (end.textContent ?? "").length
-  ) {
+  if (end.nodeType === Node.TEXT_NODE && endOffset < (end.textContent ?? "").length) {
     (end as Text).splitText(endOffset);
   }
   if (start.nodeType === Node.TEXT_NODE && startOffset > 0) {
@@ -145,12 +137,7 @@ export function scaleSelection(el: HTMLElement, factor: number) {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const picked = document.createRange();
   picked.setStart(start, startOffset);
-  picked.setEnd(
-    end,
-    end.nodeType === Node.TEXT_NODE
-      ? (end.textContent ?? "").length
-      : endOffset,
-  );
+  picked.setEnd(end, end.nodeType === Node.TEXT_NODE ? (end.textContent ?? "").length : endOffset);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (n.textContent && picked.intersectsNode(n)) nodes.push(n as Text);
   }
@@ -159,12 +146,7 @@ export function scaleSelection(el: HTMLElement, factor: number) {
   for (const n of nodes) {
     const parent = n.parentElement!;
     // A span holding only this text is reused, so repeated steps don't nest.
-    const own =
-      parent !== el &&
-      parent.tagName === "SPAN" &&
-      parent.childNodes.length === 1
-        ? parent
-        : null;
+    const own = parent !== el && parent.tagName === "SPAN" && parent.childNodes.length === 1 ? parent : null;
     // The size coming from around the span.
     const outer = scaleOf(own ?? n, el);
     const current = scaleOf(n, el);

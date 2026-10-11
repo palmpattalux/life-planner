@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/supabase/server";
-import { untitled, type PageRow } from "@/lib/pages";
+import { tablesMissing, untitled, type PageRow } from "@/lib/pages";
 import { createPage } from "./actions";
 import { SetupNeeded } from "./SetupNeeded";
 
@@ -12,7 +12,8 @@ export default async function Home() {
     .select("id, kind, title, updated_at")
     .is("parent_id", null)
     .order("updated_at", { ascending: false });
-  if (error) return <SetupNeeded message={error.message} />;
+  if (error && tablesMissing(error)) return <SetupNeeded message={error.message} />;
+  if (error) throw new Error(error.message);
   const pages = (data ?? []) as Pick<PageRow, "id" | "kind" | "title" | "updated_at">[];
 
   return (

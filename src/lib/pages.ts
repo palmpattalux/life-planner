@@ -14,3 +14,10 @@ export type PageRow = {
 export type NoteContent = { body: string };
 
 export const untitled = (kind: PageKind) => (kind === "board" ? "Untitled board" : "Untitled note");
+
+// Page ids are uuids; anything else in the address can't be a page.
+export const isPageId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+// Whether a database error means the tables haven't been made yet
+// (supabase/schema.sql hasn't been run).
+export const tablesMissing = (error: { code?: string }) => error.code === "42P01" || error.code === "PGRST205";
