@@ -25,14 +25,17 @@ const PLACEHOLDER: Record<TimeUnit, string> = {
   year: "2026",
 };
 
-// The box that pops up beside a clicked line: "Time" -> pick a unit ->
-// enter beginning and end -> Done turns the line into a timeline.
+// The box that pops up beside a clicked line.
+// "Time" -> pick a unit -> enter beginning and end -> Done turns the line into
+// a timeline. "Angle" adds a bend point to the line.
 export function LineMenu({
   time,
   onDone,
+  onAngle,
 }: {
   time?: Timeline;
   onDone: (time: Timeline) => void;
+  onAngle: () => void;
 }) {
   const [step, setStep] = useState<"menu" | "unit" | "range">("menu");
   const [unit, setUnit] = useState<TimeUnit>(time?.unit ?? "day");
@@ -58,9 +61,18 @@ export function LineMenu({
       className="w-52 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
     >
       {step === "menu" && (
-        <button className={item} onClick={() => setStep("unit")}>
-          Time
-        </button>
+        <>
+          <button className={item} onClick={() => setStep("unit")}>
+            Time
+          </button>
+          <button className={`${item} flex items-center gap-2`} onClick={onAngle} aria-label="Angle">
+            {/* Angle icon: two strokes meeting at a corner. */}
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M2 14 L8 3 L14 14" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Angle
+          </button>
+        </>
       )}
 
       {step === "unit" &&
