@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   distanceAlong,
   offsetPolyline,
@@ -17,7 +17,7 @@ import {
   type Box,
   type Point,
 } from "./geometry";
-import { LinkButton, PinIcon, SquareIcon } from "./icons";
+import { CheckMark, ChecklistIcon, LinkButton, PinIcon, SquareIcon } from "./icons";
 import { LineMenu } from "./LineMenu";
 import { tickValue, timelineTicks, type Timeline } from "./timeline";
 
@@ -85,6 +85,9 @@ const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#25
 const INK = "#1c1917";
 const SELECT_BLUE = "#3b82f6";
 const SNAP_PINK = "#ec4899";
+// Checklist boxes are stored as these characters at the start of a text line.
+const UNCHECKED = "☐";
+const CHECKED = "☑";
 const PHASE_ORANGE = "#f97316";
 // How far a new phase sits from the timeline it was made from, in board units.
 const PHASE_GAP = 48;
@@ -228,6 +231,9 @@ export function Board() {
   // Whether the text being edited was just made from a circle (that change
   // is already in the undo history).
   const editingIsNew = useRef(false);
+  // A list marker added to the end of the text when editing starts from the
+  // checklist or 1.2.3. buttons.
+  const editingAppend = useRef("");
 
   const rootRef = useRef<HTMLDivElement>(null);
   const pointer = useRef<Point | null>(null);
@@ -1084,10 +1090,26 @@ export function Board() {
     if (squares.find((q) => q.id === id)?.label !== label) updateSquare(id, { label });
   }
 
-  function startEditing(id: number) {
+  function startEditing(id: number, append = "") {
     setSelection([]);
     editingIsNew.current = false;
+    editingAppend.current = append;
     setEditing(id);
+  }
+
+  // Start a checklist or numbered list on the line after the text.
+  function startList(t: Text, marker: string) {
+    startEditing(t.id, t.text ? `\n${marker}` : marker);
+  }
+
+  // Tick or untick the checklist box on one line of a text.
+  function toggleCheck(id: number, lineIndex: number) {
+    const t = texts.find((x) => x.id === id);
+    if (!t) return;
+    const lines = t.text.split("\n");
+    const line = lines[lineIndex];
+    lines[lineIndex] = (line[0] === CHECKED ? UNCHECKED : CHECKED) + line.slice(1);
+    updateText(id, { text: lines.join("\n") });
   }
 
   function confirmText(id: number, value: string) {
@@ -1582,8 +1604,9 @@ export function Board() {
             >
               {isEditing ? (
                 <TextEditor
-                  initial={t.text}
+                  initial={t.text + editingAppend.current}
                   style={style}
+                  lists
                   onConfirm={(value) => confirmText(t.id, value)}
                 />
               ) : (
@@ -1597,7 +1620,36 @@ export function Board() {
                     boxShadow: inGroup ? `0 0 0 ${px(2)}px rgb(59 130 246 / 0.35)` : undefined,
                   }}
                 >
-                  {t.text}
+                  {t.text.split("\n").map((line, i) => {
+                    const box = line[0] === UNCHECKED || line[0] === CHECKED;
+                    return (
+                      <Fragment key={i}>
+                        {i > 0 && "\n"}
+                        {box ? (
+                          <>
+                            <span
+                              data-checkbox
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                              onClick={() => toggleCheck(t.id, i)}
+                              className="relative inline-block cursor-pointer rounded-[0.12em] align-[-0.1em]"
+                              style={{
+                                width: "0.85em",
+                                height: "0.85em",
+                                marginRight: "0.3em",
+                                border: `0.09em solid ${t.color}`,
+                              }}
+                            >
+                              {line[0] === CHECKED && <CheckMark color={t.color} />}
+                            </span>
+                            {line.slice(1).replace(/^ /, "")}
+                          </>
+                        ) : (
+                          line
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </div>
               )}
 
@@ -1628,6 +1680,21 @@ export function Board() {
                         style={{ background: color }}
                       />
                     ))}
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      aria-label="Checklist"
+                      onClick={() => startList(t, `${UNCHECKED} `)}
+                      className="flex items-center rounded px-2 py-1 hover:bg-stone-100"
+                    >
+                      <ChecklistIcon />
+                    </button>
+                    <button
+                      onClick={() => startList(t, "1. ")}
+                      className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                    >
+                      1.2.3.
+                    </button>
                   </div>
                   <button
                     onClick={() => updateText(t.id, { bold: !t.bold })}
@@ -1991,14 +2058,36 @@ export function Board() {
   );
 }
 
+// The text typed so far on the caret's line, up to the caret.
+function textBeforeCaret(el: HTMLElement): string {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return "";
+  const range = document.createRange();
+  range.setStart(el, 0);
+  range.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+  let text = "";
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) text += node.textContent;
+    else if (node.nodeName === "BR") text += "\n";
+    else node.childNodes.forEach(walk);
+  };
+  walk(range.cloneContents());
+  return text.slice(text.lastIndexOf("\n") + 1);
+}
+
 // The text being typed. Enter starts a new line; clicking elsewhere confirms it.
+// With `lists`, Enter on a checklist line starts the next line with a box, and
+// on a numbered line with the next number. Enter on a line holding only the
+// box or number ends the list.
 function TextEditor({
   initial,
   style,
+  lists = false,
   onConfirm,
 }: {
   initial: string;
   style: React.CSSProperties;
+  lists?: boolean;
   onConfirm: (value: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -2027,7 +2116,16 @@ function TextEditor({
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
+          const line = lists ? textBeforeCaret(e.currentTarget) : "";
+          const number = line.match(/^(\d+)\. /);
+          const marker = /^[☐☑] /.test(line) ? `${UNCHECKED} ` : number ? `${Number(number[1]) + 1}. ` : "";
+          if (marker && line === (number ? number[0] : line.slice(0, 2))) {
+            // An empty list line: remove its box or number to end the list.
+            for (let i = 0; i < line.length; i++) document.execCommand("delete");
+            return;
+          }
           document.execCommand("insertLineBreak");
+          if (marker) document.execCommand("insertText", false, marker);
         }
       }}
       onBlur={(e) => onConfirm(e.currentTarget.innerText)}
