@@ -54,6 +54,7 @@ type Line = {
   toArrow?: boolean;
   time?: Timeline;
   label?: string; // text in the middle of the line
+  color?: string; // the line, its arrowheads and timeline marks (default ink)
   // Pinned timeline marks, by their value (as in `time`): drawn bigger
   // (when bold) and in their own colour.
   pins?: Pin[];
@@ -1254,7 +1255,7 @@ export function Board() {
             y1={p.y - ny * size}
             x2={p.x + nx * size}
             y2={p.y + ny * size}
-            stroke={pin?.color ?? INK}
+            stroke={pin?.color ?? l.color ?? INK}
             strokeWidth={(labelled ? 1.5 : 1) * grow}
           />
           {labelled && (
@@ -1263,7 +1264,7 @@ export function Board() {
               y={p.y + ny * (size + fontSize)}
               fontSize={fontSize}
               fontWeight={pin?.bold ? 700 : 400}
-              fill={pin?.color ?? "#57534e"}
+              fill={pin?.color ?? l.color ?? "#57534e"}
               textAnchor="middle"
               dominantBaseline="middle"
             >
@@ -1297,6 +1298,7 @@ export function Board() {
     groupOf(selection[0]) !== undefined &&
     selection.every((k) => groupOf(k) === groupOf(selection[0])) &&
     withGroups(selection, board).length === selection.length;
+  const arrowheadFor = (l: Line) => `url(#arrowhead-${Math.max(0, TEXT_COLORS.indexOf(l.color ?? INK))})`;
   const toPolyline = (pts: Point[]) => pts.map((p) => `${p.x},${p.y}`).join(" ");
   const px = (n: number) => n / view.scale; // a size in screen pixels, in board units
 
@@ -1336,17 +1338,21 @@ export function Board() {
           height={BOARD_H}
         >
           <defs>
-            <marker
-              id="arrowhead"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="5"
-              markerHeight="5"
-              orient="auto-start-reverse"
-            >
-              <path d="M0,0 L10,5 L0,10 z" fill={INK} />
-            </marker>
+            {/* One arrowhead per line colour. */}
+            {TEXT_COLORS.map((color, i) => (
+              <marker
+                key={color}
+                id={`arrowhead-${i}`}
+                viewBox="0 0 10 10"
+                refX="8"
+                refY="5"
+                markerWidth="5"
+                markerHeight="5"
+                orient="auto-start-reverse"
+              >
+                <path d="M0,0 L10,5 L0,10 z" fill={color} />
+              </marker>
+            ))}
           </defs>
           {lines.map((l) => resolve(l)).map((l) => {
             const pts = drawPoints(l);
@@ -1367,12 +1373,12 @@ export function Board() {
                   data-line="line"
                   points={toPolyline(pts)}
                   fill="none"
-                  stroke={INK}
+                  stroke={l.color ?? INK}
                   strokeWidth={2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  markerStart={l.fromArrow ? "url(#arrowhead)" : undefined}
-                  markerEnd={l.toArrow ? "url(#arrowhead)" : undefined}
+                  markerStart={l.fromArrow ? arrowheadFor(l) : undefined}
+                  markerEnd={l.toArrow ? arrowheadFor(l) : undefined}
                 />
                 {timelineMarks(l, pts)}
                 {/* Wider invisible stroke so the line is easy to grab. */}
@@ -1764,10 +1770,21 @@ export function Board() {
                     setSelection([]);
                     setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
                   }}
-                  className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                  className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
                 >
                   Phase
                 </button>
+                <div className="flex gap-1.5 px-2 py-1.5">
+                  {TEXT_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      aria-label={`Colour ${color}`}
+                      onClick={() => updateLine(selectedLine.id, { color })}
+                      className={`size-5 rounded-full ${(selectedLine.color ?? INK) === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                      style={{ background: color }}
+                    />
+                  ))}
+                </div>
                 <button
                   onClick={() => {
                     setSelection([]);

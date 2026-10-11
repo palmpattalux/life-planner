@@ -12,6 +12,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
   - **Day** (0–31), **Week** (1–4) and **Year**: two slots, Beginning → End. Type a number or scroll over a slot to count up or down. Enter moves from Beginning to End, and Enter again finishes.
   - **Month**: pick the beginning month (Jan–Dec), then the end month. It can wrap round the year, e.g. Nov → Feb.
 - Click a timeline and a **Phase** box appears above the first third of it. Press Phase, move along the timeline (the stretch shows in orange), click to set the start, then click again or press Enter to finish (Escape cancels). The stretch becomes its own timeline beside the original (on the right of an upright timeline, above a level one), no longer connected to it.
+- Between Phase and Pin are colour dots that recolour the timeline (line, marks, labels and arrowheads).
 - The same box has **Pin** (pin icon): press it, move along the timeline and click a mark. That mark becomes bigger and bold, and a small box opens with **B** (turn bold off or on) and colours. Click a pinned mark to open its box again.
 - Click a line to show an arrow button beside each end. Click one to give that end an arrowhead; click again to remove it.
 - Click a line and choose **Text** to type text in the middle of the line. Double-click that text to edit it.
