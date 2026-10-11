@@ -61,6 +61,8 @@ type Kind = "circle" | "square" | "text" | "line";
 // Selected things, as "circle:3", "text:7", "line:2".
 type Key = `${Kind}:${number}`;
 // "selection": pressing inside the selection box, on empty board.
+// A circle, square or text as a box, for snapping things in line.
+type SnapBox = { key: Key; x: number; y: number; w: number; h: number };
 type DragKind = Kind | End | "bend" | "corner" | "selection";
 
 const CIRCLE_SIZE = 64;
@@ -301,14 +303,29 @@ export function Board() {
     return l ? boxAround(pointsOf(resolve(l, data))) : null;
   }
 
-  // How far to nudge squares being dragged (by dx, dy) so an edge or middle
-  // of one of them lines up with an edge or middle of another square, like in
-  // Canva, and the guide lines to show. The squares all move together.
-  function snapSquares(moving: Square[], dx: number, dy: number, all: Square[]) {
+  // Circles, squares and texts as boxes (centre and size) for snapping.
+  function snapBoxesOf(data: BoardData): SnapBox[] {
+    const scale = viewRef.current.scale;
+    return [
+      ...data.circles.map((c) => ({ key: keyOf("circle", c.id), x: c.x, y: c.y, w: c.size, h: c.size })),
+      ...data.squares.map((q) => ({ key: keyOf("square", q.id), x: q.x, y: q.y, w: q.w, h: q.h })),
+      ...data.texts.map((t) => {
+        // The text's size from the page; its centre from the data (the page
+        // may already show it moved).
+        const r = document.querySelector(`[data-text="${t.id}"]`)?.getBoundingClientRect();
+        return { key: keyOf("text", t.id), x: t.x, y: t.y, w: (r?.width ?? 0) / scale, h: (r?.height ?? 0) / scale };
+      }),
+    ];
+  }
+
+  // How far to nudge things being dragged (by dx, dy) so an edge or middle of
+  // one of them lines up with an edge or middle of another circle, square or
+  // text, like in Canva, and the guide lines to show. They all move together.
+  function snapBoxes(moving: SnapBox[], dx: number, dy: number, all: SnapBox[]) {
     const reach = SNAP_DISTANCE / viewRef.current.scale;
-    const movingIds = new Set(moving.map((q) => q.id));
-    const others = all.filter((s) => !movingIds.has(s.id));
-    const lineOf = (s: Square, key: "x" | "y", size: "w" | "h") => [s[key] - s[size] / 2, s[key], s[key] + s[size] / 2];
+    const movingKeys = new Set(moving.map((q) => q.key));
+    const others = all.filter((s) => !movingKeys.has(s.key));
+    const lineOf = (s: SnapBox, key: "x" | "y", size: "w" | "h") => [s[key] - s[size] / 2, s[key], s[key] + s[size] / 2];
     const axis = (key: "x" | "y", size: "w" | "h", shift: number) => {
       let best: { delta: number; at: number } | null = null;
       for (const q of moving) {
@@ -763,27 +780,19 @@ export function Board() {
     // Several things selected: move them all together. Squares among them
     // snap to the other squares, nudging the whole lot.
     if (d.many) {
-      const movingSquares = o.squares.filter((q) => d.many!.includes(keyOf("square", q.id)));
-      const snap = movingSquares.length ? snapSquares(movingSquares, dx, dy, o.squares) : { dx, dy, lines: [] };
+      const all = snapBoxesOf(o);
+      const moving = all.filter((s) => d.many!.includes(s.key));
+      const snap = moving.length ? snapBoxes(moving, dx, dy, all) : { dx, dy, lines: [] };
       setSnapGuides(snap.lines);
       moveMany(d.many, snap.dx, snap.dy, o);
       return;
     }
-    if (d.kind === "square") {
-      const q = o.squares.find((x) => x.id === d.id)!;
-      const snap = snapSquares([q], dx, dy, o.squares);
+    if (d.kind === "circle" || d.kind === "text" || d.kind === "square") {
+      const key = keyOf(d.kind, d.id);
+      const all = snapBoxesOf(o);
+      const snap = snapBoxes(all.filter((s) => s.key === key), dx, dy, all);
       setSnapGuides(snap.lines);
-      setSquares(() => o.squares.map((s) => (s.id === d.id ? { ...s, x: q.x + snap.dx, y: q.y + snap.dy } : s)));
-      return;
-    }
-
-    if (d.kind === "circle" || d.kind === "text") {
-      const list: { id: number; x: number; y: number }[] = d.kind === "circle" ? o.circles : o.texts;
-      const it = list.find((x) => x.id === d.id)!;
-      const moveOne = <T extends { id: number; x: number; y: number }>(items: T[]) =>
-        items.map((x) => (x.id === d.id ? { ...x, x: it.x + dx, y: it.y + dy } : x));
-      if (d.kind === "circle") setCircles(moveOne);
-      else setTexts(moveOne);
+      moveMany([key], snap.dx, snap.dy, o);
       return;
     }
 
