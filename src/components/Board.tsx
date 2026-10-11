@@ -145,6 +145,8 @@ export function Board() {
   viewRef.current = view;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
+  // The box around several selected things (set while rendering).
+  const groupBoxRef = useRef<Box | null>(null);
 
   // Undo history: snapshots of the board from before each change.
   const history = useRef<BoardData[]>([]);
@@ -320,7 +322,16 @@ export function Board() {
       e.preventDefault();
 
       const sel = selectionRef.current;
-      const resizable = sel.length > 1 || (sel.length === 1 && !sel[0].startsWith("line:"));
+      // Several things selected: only a pinch (or mouse wheel) with the
+      // cursor inside their box resizes them. Two-finger swipes, and anything
+      // outside the box, move around the board as usual.
+      const box = groupBoxRef.current;
+      const at = toBoard(e.clientX, e.clientY);
+      const pad = 6 / viewRef.current.scale;
+      const insideBox =
+        !!box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad;
+      const groupResize = sel.length > 1 && insideBox && (e.ctrlKey || !isTrackpadSwipe(e));
+      const resizable = groupResize || (sel.length === 1 && !sel[0].startsWith("line:"));
       if (resizable) {
         const now = Date.now();
         if (now - lastResizeAt.current > RESIZE_UNDO_GAP_MS) commit();
@@ -839,6 +850,7 @@ export function Board() {
   const selectedLine = single?.startsWith("line:") ? lines.find((l) => l.id === singleId) : undefined;
   const groupBox =
     selection.length > 1 ? mergeBoxes(selection.map((k) => boxOf(k)).filter((b): b is Box => !!b)) : null;
+  groupBoxRef.current = groupBox;
   // Whether the selection is exactly one group (then the button ungroups).
   const groupOf = (k: Key) => {
     const [kind, idStr] = k.split(":");
