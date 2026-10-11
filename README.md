@@ -12,7 +12,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Click a line and choose **Text** to type text in the middle of the line. Double-click that text to edit it.
 - Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends.
 - Click anything and press **Backspace** to delete it.
-- **Ctrl+Z** (or Cmd+Z) undoes any change: adding, moving, resizing, recolouring, arrows, bends, deleting.
+- **Ctrl+Z** (or Cmd+Z) undoes any change: adding, moving, resizing, recolouring, arrows, bends, deleting. **Ctrl+Shift+Z** (or Cmd+Shift+Z) redoes it.
 - Drag on an empty part of the board to draw a selection box. Everything it touches is selected: drag any of them, or anywhere inside the dashed box, to move them all. Pinch (or mouse wheel) with the cursor inside the box resizes them all; a two-finger swipe, or anything outside the box, moves around the board as usual.
 - With several things selected, click **Group** beside the selection box. Grouped things are selected and moved together; click **Ungroup** to split them again.
 - With several things selected, the **Preset** button in the top right remembers them as a preset (adding presets back to the board comes later).

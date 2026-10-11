@@ -139,7 +139,8 @@ const idsOf = (sel: Key[], kind: Kind) =>
 //   buttons beside its ends (click to give that end an arrowhead) and its menu:
 //   "Time" turns it into a timeline, "Angle" adds a bend point you can drag.
 //   Drop an end near a circle or text and it attaches, following it when it moves.
-// - Backspace deletes whatever is selected; Ctrl+Z / Cmd+Z undoes any change.
+// - Backspace deletes whatever is selected; Ctrl+Z / Cmd+Z undoes any change,
+//   Ctrl+Shift+Z / Cmd+Shift+Z redoes it.
 export function Board() {
   const [board, setBoard] = useState<BoardData>({ circles: [], squares: [], texts: [], lines: [] });
   const { circles, squares, texts, lines } = board;
@@ -180,6 +181,8 @@ export function Board() {
 
   // Undo history: snapshots of the board from before each change.
   const history = useRef<BoardData[]>([]);
+  // Changes that were undone, newest last, for Ctrl+Shift+Z.
+  const future = useRef<BoardData[]>([]);
   const lastResizeAt = useRef(0);
   // Whether the text being edited was just made from a circle (that change
   // is already in the undo history).
@@ -210,6 +213,8 @@ export function Board() {
   function commit() {
     history.current.push(boardRef.current);
     if (history.current.length > MAX_UNDO) history.current.shift();
+    // A new change means the undone ones can't be redone any more.
+    future.current = [];
   }
 
   // Screen position -> board position.
@@ -621,6 +626,18 @@ export function Board() {
     function undo() {
       const prev = history.current.pop();
       if (!prev) return;
+      future.current.push(boardRef.current);
+      restore(prev);
+    }
+
+    function redo() {
+      const next = future.current.pop();
+      if (!next) return;
+      history.current.push(boardRef.current);
+      restore(next);
+    }
+
+    function restore(prev: BoardData) {
       setBoard(prev);
       // Keep selected whatever still exists, so its menu stays open.
       const exists = new Set<Key>(allKeys(prev));
@@ -632,9 +649,10 @@ export function Board() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (typing(e)) return;
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        undo();
+        if (e.shiftKey) redo();
+        else undo();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
