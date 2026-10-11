@@ -114,3 +114,51 @@ export function segmentTouchesBox(a: Point, b: Point, box: Box) {
   }
   return true;
 }
+
+// How far along the polyline the point nearest to p is.
+export function distanceAlong(points: Point[], p: Point): number {
+  let best = Infinity;
+  let bestAlong = 0;
+  let walked = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const seg = dist(a, b);
+    const t = seg ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (seg * seg))) : 0;
+    const d = dist(p, { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    if (d < best) {
+      best = d;
+      bestAlong = walked + seg * t;
+    }
+    walked += seg;
+  }
+  return bestAlong;
+}
+
+// The part of the polyline from distance d1 to d2 along it (d1 <= d2).
+export function subPolyline(points: Point[], d1: number, d2: number): Point[] {
+  const out = [pointAlong(points, d1).p];
+  let walked = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    walked += dist(points[i - 1], points[i]);
+    if (walked > d1 && walked < d2) out.push(points[i]);
+  }
+  out.push(pointAlong(points, d2).p);
+  return out;
+}
+
+// The polyline moved sideways by `by` (each corner moved along the average of
+// its two sides' sideways directions). Positive `by` is to the left of the
+// direction of travel on screen (y pointing down).
+export function offsetPolyline(points: Point[], by: number): Point[] {
+  const side = (a: Point, b: Point) => {
+    const d = unit(a, b);
+    return { x: d.y, y: -d.x };
+  };
+  return points.map((p, i) => {
+    const before = i > 0 ? side(points[i - 1], p) : null;
+    const after = i < points.length - 1 ? side(p, points[i + 1]) : null;
+    const n = before && after ? unit({ x: 0, y: 0 }, { x: before.x + after.x, y: before.y + after.y }) : (before ?? after)!;
+    return { x: p.x + n.x * by, y: p.y + n.y * by };
+  });
+}

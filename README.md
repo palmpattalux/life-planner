@@ -11,6 +11,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Click a line and choose **Time**, then Day, Week, Month or Year. The line becomes a timeline, like a ruler.
   - **Day** (0–31), **Week** (1–4) and **Year**: two slots, Beginning → End. Type a number or scroll over a slot to count up or down. Enter moves from Beginning to End, and Enter again finishes.
   - **Month**: pick the beginning month (Jan–Dec), then the end month. It can wrap round the year, e.g. Nov → Feb.
+- Click a timeline and a **Phase** box appears above the first third of it. Press Phase, move along the timeline (the stretch shows in orange), click to set the start, then click again or press Enter to finish (Escape cancels). The stretch becomes its own timeline beside the original, no longer connected to it.
 - Click a line to show an arrow button beside each end. Click one to give that end an arrowhead; click again to remove it.
 - Click a line and choose **Text** to type text in the middle of the line. Double-click that text to edit it.
 - Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends: the new one goes in the middle of the part of the line you clicked on (between the nearest bend and that tip).

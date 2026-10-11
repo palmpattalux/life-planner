@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  distanceAlong,
+  offsetPolyline,
+  subPolyline,
   boxAround,
   boxesTouch,
   circleTouchesBox,
@@ -16,7 +19,7 @@ import {
 } from "./geometry";
 import { LinkButton, SquareIcon } from "./icons";
 import { LineMenu } from "./LineMenu";
-import { timelineTicks, type Timeline } from "./timeline";
+import { tickValue, timelineTicks, type Timeline } from "./timeline";
 
 type View = { x: number; y: number; scale: number };
 // `group`: things grouped together share a group number and are selected
@@ -75,6 +78,9 @@ const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#25
 const INK = "#1c1917";
 const SELECT_BLUE = "#3b82f6";
 const SNAP_PINK = "#ec4899";
+const PHASE_ORANGE = "#f97316";
+// How far a new phase sits from the timeline it was made from, in board units.
+const PHASE_GAP = 48;
 // Moving less than this many pixels between press and release counts as a click.
 const CLICK_SLOP = 4;
 // Scroll steps closer together than this are one resize, undone in one go.
@@ -165,6 +171,9 @@ export function Board() {
 
   const [selection, setSelection] = useState<Key[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
+  // Choosing a phase on a timeline: the first tick picked (null until the
+  // first click) and the tick under the mouse.
+  const [phase, setPhase] = useState<{ lineId: number; start: number | null; hover: number } | null>(null);
   // Alignment lines shown while a square snaps to other squares.
   const [snapGuides, setSnapGuides] = useState<{ a: Point; b: Point }[]>([]);
   // Which line's middle text is being typed.
@@ -1057,6 +1066,62 @@ export function Board() {
     updateLine(l.id, { bends });
   }
 
+  // A timeline's drawn points, its tick labels and the gap between ticks.
+  function timelineGeometry(l: Line) {
+    const pts = drawPoints(resolve(l));
+    const labels = (l.time && timelineTicks(l.time)) || [];
+    const len = polylineLength(pts) || 1;
+    return { pts, labels, len, spacing: labels.length > 1 ? len / (labels.length - 1) : len };
+  }
+
+  // The tick of the phase's timeline nearest this screen position.
+  function phaseTickAt(sx: number, sy: number) {
+    const l = lines.find((x) => x.id === phase?.lineId);
+    if (!l) return 0;
+    const { pts, labels, spacing } = timelineGeometry(l);
+    return clamp(Math.round(distanceAlong(pts, toBoard(sx, sy)) / spacing), 0, labels.length - 1);
+  }
+
+  // Make the chosen stretch of the timeline into its own timeline, beside the
+  // original and not connected to it.
+  function confirmPhase() {
+    if (!phase || phase.start === null) return;
+    const l = lines.find((x) => x.id === phase.lineId);
+    const i1 = Math.min(phase.start, phase.hover);
+    const i2 = Math.max(phase.start, phase.hover);
+    if (!l?.time || i1 === i2) return;
+    const { pts, spacing } = timelineGeometry(l);
+    // Put it on the side away from the tick labels.
+    const d = unit(pts[0], pts[1]);
+    const side = d.x > 0 || (d.x === 0 && d.y <= 0) ? 1 : -1;
+    const off = offsetPolyline(subPolyline(pts, i1 * spacing, i2 * spacing), side * PHASE_GAP);
+    const id = nextId.current++;
+    commit();
+    setLines((ls) => [
+      ...ls,
+      {
+        id,
+        from: off[0],
+        to: off[off.length - 1],
+        bends: off.length > 2 ? off.slice(1, -1) : undefined,
+        time: { unit: l.time!.unit, start: tickValue(l.time!, i1), end: tickValue(l.time!, i2) },
+      },
+    ]);
+    setPhase(null);
+    setSelection([keyOf("line", id)]);
+  }
+
+  // Enter confirms the phase; Escape stops choosing one.
+  useEffect(() => {
+    if (!phase) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Enter") confirmPhase();
+      if (e.key === "Escape") setPhase(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   // The ruler marks for a timeline line: one tick per day/week/month/year,
   // evenly spaced along the line from its start to its end. Labels are thinned
   // out when they would overlap.
@@ -1225,6 +1290,30 @@ export function Board() {
               </g>
             );
           })}
+          {phase &&
+            (() => {
+              const l = lines.find((x) => x.id === phase.lineId);
+              if (!l) return null;
+              const { pts, spacing } = timelineGeometry(l);
+              const at = pointAlong(pts, phase.hover * spacing).p;
+              const lo = Math.min(phase.start ?? phase.hover, phase.hover) * spacing;
+              const hi = Math.max(phase.start ?? phase.hover, phase.hover) * spacing;
+              return (
+                <g data-phase-preview>
+                  {hi > lo && (
+                    <polyline
+                      points={toPolyline(subPolyline(pts, lo, hi))}
+                      fill="none"
+                      stroke={PHASE_ORANGE}
+                      strokeWidth={4}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                  <circle cx={at.x} cy={at.y} r={px(5)} fill={PHASE_ORANGE} />
+                </g>
+              );
+            })()}
           {draft && (
             <line
               data-line="draft"
@@ -1555,6 +1644,32 @@ export function Board() {
             );
           })()}
 
+        {selectedLine &&
+          !phase &&
+          (() => {
+            const { pts, labels, len } = timelineGeometry(selectedLine);
+            if (labels.length < 2) return null;
+            const at = pointAlong(pts, len / 3).p;
+            return (
+              <div
+                data-menu="phase"
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute -translate-x-1/2 -translate-y-full rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+                style={{ left: at.x, top: at.y - px(14) }}
+              >
+                <button
+                  onClick={() => {
+                    setSelection([]);
+                    setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
+                  }}
+                  className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                >
+                  Phase
+                </button>
+              </div>
+            );
+          })()}
+
         {menuCircle && (
           <div
             data-menu="circle"
@@ -1673,6 +1788,22 @@ export function Board() {
         >
           {presetSaved ? "Preset saved" : "Preset"}
         </button>
+      )}
+
+      {phase && (
+        // While choosing a phase: move along the timeline, click to start,
+        // click again (or Enter) to finish. Escape stops.
+        <div
+          data-phase-overlay
+          className="absolute inset-0 cursor-crosshair"
+          onPointerMove={(e) => setPhase({ ...phase, hover: phaseTickAt(e.clientX, e.clientY) })}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            const hover = phaseTickAt(e.clientX, e.clientY);
+            if (phase.start === null) setPhase({ ...phase, start: hover, hover });
+            else confirmPhase();
+          }}
+        />
       )}
 
       {marquee && (

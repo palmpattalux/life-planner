@@ -53,3 +53,11 @@ export function timelineTicks(t: Timeline): string[] | null {
   if (b < a || b - a + 1 > MAX_TICKS) return null;
   return Array.from({ length: b - a + 1 }, (_, i) => label(t.unit, a + i));
 }
+
+// The start / end value of the i-th tick of a valid timeline (for making a
+// phase from part of it).
+export function tickValue(t: Timeline, i: number): string {
+  const a = Number(t.start);
+  if (t.unit === "month") return String(((a - 1 + i) % 12) + 1);
+  return String(a + i);
+}
