@@ -87,6 +87,7 @@ const SNAP_PINK = "#ec4899";
 const PHASE_ORANGE = "#f97316";
 // How far a new phase sits from the timeline it was made from, in board units.
 const PHASE_GAP = 48;
+const PHASE_GAP_PAST_LABELS = 72;
 // How much bigger a bold pinned timeline mark is drawn.
 const PIN_GROW = 1.5;
 // Moving less than this many pixels between press and release counts as a click.
@@ -1147,10 +1148,13 @@ export function Board() {
     const i2 = Math.max(phase.start, phase.hover);
     if (!l?.time || i1 === i2) return;
     const { pts, spacing } = timelineGeometry(l);
-    // Put it on the side away from the tick labels.
+    // Upright timelines get the phase on their right (past the tick labels,
+    // so a little further out); level ones get it above.
     const d = unit(pts[0], pts[1]);
-    const side = d.x > 0 || (d.x === 0 && d.y <= 0) ? 1 : -1;
-    const off = offsetPolyline(subPolyline(pts, i1 * spacing, i2 * spacing), side * PHASE_GAP);
+    const upright = Math.abs(d.y) > Math.abs(d.x);
+    const side = upright ? Math.sign(d.y) : d.x > 0 || (d.x === 0 && d.y <= 0) ? 1 : -1;
+    const gap = upright ? PHASE_GAP_PAST_LABELS : PHASE_GAP;
+    const off = offsetPolyline(subPolyline(pts, i1 * spacing, i2 * spacing), side * gap);
     const id = nextId.current++;
     commit();
     setLines((ls) => [
