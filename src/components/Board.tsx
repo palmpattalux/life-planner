@@ -54,7 +54,8 @@ type BoardData = { circles: Circle[]; texts: Text[]; lines: Line[] };
 type Kind = "circle" | "text" | "line";
 // Selected things, as "circle:3", "text:7", "line:2".
 type Key = `${Kind}:${number}`;
-type DragKind = Kind | End | "bend";
+// "selection": pressing inside the selection box, on empty board.
+type DragKind = Kind | End | "bend" | "selection";
 
 const CIRCLE_SIZE = 64;
 const MIN_CIRCLE = 8;
@@ -609,6 +610,7 @@ export function Board() {
       return;
     }
 
+    if (d.kind === "selection") return;
     const line = resolve(o.lines.find((l) => l.id === d.id)!, o);
     let next: Line;
     if (d.kind === "line") {
@@ -666,9 +668,26 @@ export function Board() {
     };
   }
 
-  // Pressing on empty board starts a selection box.
+  // Pressing on empty board starts a selection box (or, inside the box
+  // around several selected things, drags them).
   function onBoardPointerDown(e: React.PointerEvent) {
     e.currentTarget.setPointerCapture(e.pointerId);
+    // Inside the box around several selected things: drag them all.
+    const at = toBoard(e.clientX, e.clientY);
+    const pad = 6 / viewRef.current.scale;
+    if (groupBox && at.x >= groupBox.minX - pad && at.x <= groupBox.maxX + pad && at.y >= groupBox.minY - pad && at.y <= groupBox.maxY + pad) {
+      drag.current = {
+        kind: "selection",
+        id: -1,
+        start: at,
+        orig: boardRef.current,
+        many: selection,
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false,
+      };
+      return;
+    }
     setMarquee({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
   }
 
