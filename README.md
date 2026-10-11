@@ -26,7 +26,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Click a circle or text to select it and open its menu. While selected, the scroll wheel or trackpad resizes it instead of the board (text shows its px size). Click the board to deselect.
 - The circle menu's **Text** turns the circle into text, ready to type. Enter starts a new line; clicking elsewhere confirms. The text menu changes colour and bold. Double-click text to edit it.
 - The circle menu's **Square** turns the circle into a square outline. Only the outline can be clicked or dragged, not the space inside. Its menu changes its colour and has **Text**, which adds a label on the outside of its top left corner in the same colour. It resizes like a circle, and when clicked its corners show handles: drag one to stretch it into any rectangle.
-- Dragging a circle, square or text near another one snaps its edges or middle in line with the other's, with pink guide lines, so things line up neatly side by side. This also works when moving a group or selection that has squares in it.
+- Dragging a circle, square or text near another one snaps its edges or middle in line with the other's, with pink guide lines, so things line up neatly side by side. Lines have their own snapping: dragging a line, an end or a bend lines its ends, bends and timeline marks up with other lines' ends, bends and marks. This also works when moving a group or selection that has squares in it.
 - Every menu has a chain icon (**Link**). It will link to other notes, pages or websites later; for now it does nothing.
 
 Built with Next.js, TypeScript, Tailwind CSS and Supabase (login). Deployed on Vercel.

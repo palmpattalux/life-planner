@@ -64,8 +64,10 @@ type Kind = "circle" | "square" | "text" | "line";
 // Selected things, as "circle:3", "text:7", "line:2".
 type Key = `${Kind}:${number}`;
 // "selection": pressing inside the selection box, on empty board.
-// A circle, square or text as a box, for snapping things in line.
-type SnapBox = { key: Key; x: number; y: number; w: number; h: number };
+// A circle, square or text as a box, for snapping things in line. Lines
+// snap by their points (ends, bends and timeline marks) as zero-size boxes,
+// and only to other lines' points (`line: true`).
+type SnapBox = { key: Key; x: number; y: number; w: number; h: number; line?: boolean };
 type DragKind = Kind | End | "bend" | "corner" | "selection";
 
 const CIRCLE_SIZE = 64;
@@ -324,7 +326,26 @@ export function Board() {
         const r = document.querySelector(`[data-text="${t.id}"]`)?.getBoundingClientRect();
         return { key: keyOf("text", t.id), x: t.x, y: t.y, w: (r?.width ?? 0) / scale, h: (r?.height ?? 0) / scale };
       }),
+      ...data.lines.flatMap((l) =>
+        lineSnapPoints(l, data).map((p) => ({ key: keyOf("line", l.id), ...p, w: 0, h: 0, line: true })),
+      ),
     ];
+  }
+
+  // A line's points that snap: its ends, bends and timeline marks.
+  function lineSnapPoints(l: Line, data: BoardData): Point[] {
+    const pts = pointsOf(resolve(l, data));
+    const labels = (l.time && timelineTicks(l.time)) || [];
+    const len = polylineLength(pts);
+    const marks = labels.length > 1 ? labels.map((_, i) => pointAlong(pts, (len * i) / (labels.length - 1)).p) : [];
+    return [...pts, ...marks];
+  }
+
+  // Snap one dragged line point (an end or bend) in line with other lines'
+  // points. Returns where it goes and the guide lines.
+  function snapLinePoint(lineId: number, p: Point, data: BoardData) {
+    const snap = snapBoxes([{ key: keyOf("line", lineId), ...p, w: 0, h: 0, line: true }], 0, 0, snapBoxesOf(data));
+    return { at: { x: p.x + snap.dx, y: p.y + snap.dy }, lines: snap.lines };
   }
 
   // How far to nudge things being dragged (by dx, dy) so an edge or middle of
@@ -340,6 +361,8 @@ export function Board() {
       for (const q of moving) {
         const mine = lineOf({ ...q, [key]: q[key] + shift }, key, size);
         for (const o of others) {
+          // Lines snap to lines; circles, squares and texts to each other.
+          if (!!o.line !== !!q.line) continue;
           for (const target of lineOf(o, key, size)) {
             for (const m of mine) {
               const delta = target - m;
@@ -372,6 +395,12 @@ export function Board() {
       });
     }
     return { dx: ndx, dy: ndy, lines };
+  }
+
+  // The guide lines still true after a snapped point was moved again
+  // (vertical guides need the same x, horizontal ones the same y).
+  function keptGuides(guides: { a: Point; b: Point }[], snapped: Point, final: Point) {
+    return guides.filter((g) => (g.a.x === g.b.x ? final.x === snapped.x : final.y === snapped.y));
   }
 
   // The circle or text (topmost first) that this board point is inside.
@@ -826,20 +855,28 @@ export function Board() {
     const line = resolve(o.lines.find((l) => l.id === d.id)!, o);
     let next: Line;
     if (d.kind === "line") {
+      // Its ends, bends and marks snap in line with other lines' points.
+      const all = snapBoxesOf(o);
+      const snap = snapBoxes(all.filter((b) => b.key === keyOf("line", d.id)), dx, dy, all);
+      setSnapGuides(snap.lines);
+      const shift = (pt: Point) => ({ x: pt.x + snap.dx, y: pt.y + snap.dy });
       // Moving the whole line takes it off anything it was attached to.
       next = {
         ...line,
-        from: move(line.from),
-        to: move(line.to),
+        from: shift(line.from),
+        to: shift(line.to),
         fromItem: undefined,
         toItem: undefined,
-        bends: line.bends?.map(move),
+        bends: line.bends?.map(shift),
       };
     } else if (d.kind === "bend") {
       // Straighten against whichever neighbour it is nearly level or upright with.
       const pts = pointsOf(line);
       const i = d.index! + 1;
-      const at = straighten(straighten(move(pts[i]), pts[i - 1]), pts[i + 1]);
+      // Snap in line with other lines' points; nearly straight wins.
+      const snapped = snapLinePoint(d.id, move(pts[i]), o);
+      const at = straighten(straighten(snapped.at, pts[i - 1]), pts[i + 1]);
+      setSnapGuides(keptGuides(snapped.lines, snapped.at, at));
       next = { ...line, bends: line.bends!.map((p, j) => (j === d.index ? at : p)) };
       // Keep attached ends attached.
       next = { ...next, from: o.lines.find((l) => l.id === d.id)!.from, to: o.lines.find((l) => l.id === d.id)!.to };
@@ -847,7 +884,9 @@ export function Board() {
       const end = d.kind;
       const pts = pointsOf(line);
       const neighbour = end === "from" ? pts[1] : pts[pts.length - 2];
-      const pos = straighten(move(line[end]), neighbour);
+      // Snap in line with other lines' points; nearly straight wins.
+      const snapped = snapLinePoint(d.id, move(line[end]), o);
+      const pos = straighten(snapped.at, neighbour);
       const scale = viewRef.current.scale;
       // Nearest circle or text within reach (distance from its edge).
       const reach = ATTACH_DISTANCE / scale;
@@ -863,6 +902,7 @@ export function Board() {
       ]
         .filter(({ gap }) => gap <= reach)
         .sort((a, b) => a.gap - b.gap)[0]?.c;
+      setSnapGuides(near ? [] : keptGuides(snapped.lines, snapped.at, pos));
       const other: End = end === "from" ? "to" : "from";
       next = {
         ...line,
