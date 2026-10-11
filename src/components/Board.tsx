@@ -282,48 +282,51 @@ export function Board() {
     return l ? boxAround(pointsOf(resolve(l, data))) : null;
   }
 
-  // Where a dragged square (centre wanted at x, y) should go so its edges or
-  // middle line up with a nearby square's edges or middle, like in Canva, and
-  // the guide lines to show.
-  function snapSquare(q: Square, x: number, y: number, all: Square[]) {
+  // How far to nudge squares being dragged (by dx, dy) so an edge or middle
+  // of one of them lines up with an edge or middle of another square, like in
+  // Canva, and the guide lines to show. The squares all move together.
+  function snapSquares(moving: Square[], dx: number, dy: number, all: Square[]) {
     const reach = SNAP_DISTANCE / viewRef.current.scale;
-    const others = all.filter((s) => s.id !== q.id);
-    const axis = (pos: number, half: number, key: "x" | "y", size: "w" | "h") => {
+    const movingIds = new Set(moving.map((q) => q.id));
+    const others = all.filter((s) => !movingIds.has(s.id));
+    const lineOf = (s: Square, key: "x" | "y", size: "w" | "h") => [s[key] - s[size] / 2, s[key], s[key] + s[size] / 2];
+    const axis = (key: "x" | "y", size: "w" | "h", shift: number) => {
       let best: { delta: number; at: number } | null = null;
-      for (const o of others) {
-        for (const target of [o[key] - o[size] / 2, o[key], o[key] + o[size] / 2]) {
-          for (const mine of [pos - half, pos, pos + half]) {
-            const delta = target - mine;
-            if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, at: target };
+      for (const q of moving) {
+        const mine = lineOf({ ...q, [key]: q[key] + shift }, key, size);
+        for (const o of others) {
+          for (const target of lineOf(o, key, size)) {
+            for (const m of mine) {
+              const delta = target - m;
+              if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, at: target };
+            }
           }
         }
       }
       return best;
     };
-    const sx = axis(x, q.w / 2, "x", "w");
-    const sy = axis(y, q.h / 2, "y", "h");
-    const nx = x + (sx?.delta ?? 0);
-    const ny = y + (sy?.delta ?? 0);
-    // A guide runs across the moved square and every square on that line.
+    const sx = axis("x", "w", dx);
+    const sy = axis("y", "h", dy);
+    const ndx = dx + (sx?.delta ?? 0);
+    const ndy = dy + (sy?.delta ?? 0);
+    const placed = [...moving.map((q) => ({ ...q, x: q.x + ndx, y: q.y + ndy })), ...others];
+    // A guide runs across every square on that line.
     const lines: { a: Point; b: Point }[] = [];
-    const me = { ...q, x: nx, y: ny };
-    const onLine = (s: Square, key: "x" | "y", size: "w" | "h", at: number) =>
-      [s[key] - s[size] / 2, s[key], s[key] + s[size] / 2].some((v) => Math.abs(v - at) < 0.5);
     if (sx) {
-      const ss = [me, ...others.filter((s) => onLine(s, "x", "w", sx.at))];
+      const ss = placed.filter((s) => lineOf(s, "x", "w").some((v) => Math.abs(v - sx.at) < 0.5));
       lines.push({
         a: { x: sx.at, y: Math.min(...ss.map((s) => s.y - s.h / 2)) },
         b: { x: sx.at, y: Math.max(...ss.map((s) => s.y + s.h / 2)) },
       });
     }
     if (sy) {
-      const ss = [me, ...others.filter((s) => onLine(s, "y", "h", sy.at))];
+      const ss = placed.filter((s) => lineOf(s, "y", "h").some((v) => Math.abs(v - sy.at) < 0.5));
       lines.push({
         a: { x: Math.min(...ss.map((s) => s.x - s.w / 2)), y: sy.at },
         b: { x: Math.max(...ss.map((s) => s.x + s.w / 2)), y: sy.at },
       });
     }
-    return { x: nx, y: ny, lines };
+    return { dx: ndx, dy: ndy, lines };
   }
 
   // The circle or text (topmost first) that this board point is inside.
@@ -722,39 +725,20 @@ export function Board() {
     const move = (pt: Point) => ({ x: pt.x + dx, y: pt.y + dy });
     const o = d.orig;
 
-    // Several things selected: move them all together.
+    // Several things selected: move them all together. Squares among them
+    // snap to the other squares, nudging the whole lot.
     if (d.many) {
-      const cIds = idsOf(d.many, "circle");
-      const tIds = idsOf(d.many, "text");
-      const sIds = idsOf(d.many, "square");
-      const lIds = idsOf(d.many, "line");
-      const movesWithItem = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
-      setBoard({
-        circles: o.circles.map((c) => (cIds.has(c.id) ? { ...c, ...move(c) } : c)),
-        squares: o.squares.map((q) => (sIds.has(q.id) ? { ...q, ...move(q) } : q)),
-        texts: o.texts.map((t) => (tIds.has(t.id) ? { ...t, ...move(t) } : t)),
-        lines: o.lines.map((l) => {
-          if (!lIds.has(l.id)) return l;
-          const r = resolve(l, o);
-          // Ends attached to something that moves too stay attached.
-          return {
-            ...l,
-            from: move(r.from),
-            to: move(r.to),
-            fromItem: movesWithItem(l.fromItem) ? l.fromItem : undefined,
-            toItem: movesWithItem(l.toItem) ? l.toItem : undefined,
-            bends: l.bends?.map(move),
-          };
-        }),
-      });
+      const movingSquares = o.squares.filter((q) => d.many!.includes(keyOf("square", q.id)));
+      const snap = movingSquares.length ? snapSquares(movingSquares, dx, dy, o.squares) : { dx, dy, lines: [] };
+      setSnapGuides(snap.lines);
+      moveMany(d.many, snap.dx, snap.dy, o);
       return;
     }
-
     if (d.kind === "square") {
       const q = o.squares.find((x) => x.id === d.id)!;
-      const { x, y, lines: guides } = snapSquare(q, q.x + dx, q.y + dy, o.squares);
-      setSnapGuides(guides);
-      setSquares(() => o.squares.map((s) => (s.id === d.id ? { ...s, x, y } : s)));
+      const snap = snapSquares([q], dx, dy, o.squares);
+      setSnapGuides(snap.lines);
+      setSquares(() => o.squares.map((s) => (s.id === d.id ? { ...s, x: q.x + snap.dx, y: q.y + snap.dy } : s)));
       return;
     }
 
@@ -830,6 +814,34 @@ export function Board() {
       };
     }
     setLines(() => o.lines.map((l) => (l.id === d.id ? next : l)));
+  }
+
+  // Move these things by dx, dy from where they were in `o`.
+  function moveMany(keys: Key[], dx: number, dy: number, o: BoardData) {
+    const move = (pt: Point) => ({ x: pt.x + dx, y: pt.y + dy });
+    const cIds = idsOf(keys, "circle");
+    const tIds = idsOf(keys, "text");
+    const sIds = idsOf(keys, "square");
+    const lIds = idsOf(keys, "line");
+    const movesWithItem = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
+    setBoard({
+      circles: o.circles.map((c) => (cIds.has(c.id) ? { ...c, ...move(c) } : c)),
+      squares: o.squares.map((q) => (sIds.has(q.id) ? { ...q, ...move(q) } : q)),
+      texts: o.texts.map((t) => (tIds.has(t.id) ? { ...t, ...move(t) } : t)),
+      lines: o.lines.map((l) => {
+        if (!lIds.has(l.id)) return l;
+        const r = resolve(l, o);
+        // Ends attached to something that moves too stay attached.
+        return {
+          ...l,
+          from: move(r.from),
+          to: move(r.to),
+          fromItem: movesWithItem(l.fromItem) ? l.fromItem : undefined,
+          toItem: movesWithItem(l.toItem) ? l.toItem : undefined,
+          bends: l.bends?.map(move),
+        };
+      }),
+    });
   }
 
   function startDrag(e: React.PointerEvent, kind: DragKind, id: number, index?: number) {
