@@ -72,6 +72,7 @@ const MAX_TEXT = 800;
 const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
 const INK = "#1c1917";
 const SELECT_BLUE = "#3b82f6";
+const SNAP_PINK = "#ec4899";
 // Moving less than this many pixels between press and release counts as a click.
 const CLICK_SLOP = 4;
 // Scroll steps closer together than this are one resize, undone in one go.
@@ -94,6 +95,9 @@ const LINE_LABEL_SIZE = 16;
 // How close (in screen pixels, beyond the circle's edge) a dragged line end
 // has to be to a circle to attach to it.
 const ATTACH_DISTANCE = 16;
+// How close (in screen pixels) a dragged square's edge or middle has to be to
+// another square's to snap in line with it.
+const SNAP_DISTANCE = 8;
 
 // Browsers don't say whether a wheel event came from a mouse or a trackpad.
 // Trackpads send pixel deltas that are small, fractional or sideways; mouse
@@ -146,6 +150,8 @@ export function Board() {
 
   const [selection, setSelection] = useState<Key[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
+  // Alignment lines shown while a square snaps to other squares.
+  const [snapGuides, setSnapGuides] = useState<{ a: Point; b: Point }[]>([]);
   // Which line's middle text is being typed.
   const [editingLineLabel, setEditingLineLabel] = useState<number | null>(null);
   // Which square's label is being typed.
@@ -274,6 +280,50 @@ export function Board() {
     }
     const l = data.lines.find((l) => l.id === id);
     return l ? boxAround(pointsOf(resolve(l, data))) : null;
+  }
+
+  // Where a dragged square (centre wanted at x, y) should go so its edges or
+  // middle line up with a nearby square's edges or middle, like in Canva, and
+  // the guide lines to show.
+  function snapSquare(q: Square, x: number, y: number, all: Square[]) {
+    const reach = SNAP_DISTANCE / viewRef.current.scale;
+    const others = all.filter((s) => s.id !== q.id);
+    const axis = (pos: number, half: number, key: "x" | "y", size: "w" | "h") => {
+      let best: { delta: number; at: number } | null = null;
+      for (const o of others) {
+        for (const target of [o[key] - o[size] / 2, o[key], o[key] + o[size] / 2]) {
+          for (const mine of [pos - half, pos, pos + half]) {
+            const delta = target - mine;
+            if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, at: target };
+          }
+        }
+      }
+      return best;
+    };
+    const sx = axis(x, q.w / 2, "x", "w");
+    const sy = axis(y, q.h / 2, "y", "h");
+    const nx = x + (sx?.delta ?? 0);
+    const ny = y + (sy?.delta ?? 0);
+    // A guide runs across the moved square and every square on that line.
+    const lines: { a: Point; b: Point }[] = [];
+    const me = { ...q, x: nx, y: ny };
+    const onLine = (s: Square, key: "x" | "y", size: "w" | "h", at: number) =>
+      [s[key] - s[size] / 2, s[key], s[key] + s[size] / 2].some((v) => Math.abs(v - at) < 0.5);
+    if (sx) {
+      const ss = [me, ...others.filter((s) => onLine(s, "x", "w", sx.at))];
+      lines.push({
+        a: { x: sx.at, y: Math.min(...ss.map((s) => s.y - s.h / 2)) },
+        b: { x: sx.at, y: Math.max(...ss.map((s) => s.y + s.h / 2)) },
+      });
+    }
+    if (sy) {
+      const ss = [me, ...others.filter((s) => onLine(s, "y", "h", sy.at))];
+      lines.push({
+        a: { x: Math.min(...ss.map((s) => s.x - s.w / 2)), y: sy.at },
+        b: { x: Math.max(...ss.map((s) => s.x + s.w / 2)), y: sy.at },
+      });
+    }
+    return { x: nx, y: ny, lines };
   }
 
   // The circle or text (topmost first) that this board point is inside.
@@ -700,14 +750,20 @@ export function Board() {
       return;
     }
 
-    if (d.kind === "circle" || d.kind === "text" || d.kind === "square") {
-      const list: { id: number; x: number; y: number }[] =
-        d.kind === "circle" ? o.circles : d.kind === "square" ? o.squares : o.texts;
+    if (d.kind === "square") {
+      const q = o.squares.find((x) => x.id === d.id)!;
+      const { x, y, lines: guides } = snapSquare(q, q.x + dx, q.y + dy, o.squares);
+      setSnapGuides(guides);
+      setSquares(() => o.squares.map((s) => (s.id === d.id ? { ...s, x, y } : s)));
+      return;
+    }
+
+    if (d.kind === "circle" || d.kind === "text") {
+      const list: { id: number; x: number; y: number }[] = d.kind === "circle" ? o.circles : o.texts;
       const it = list.find((x) => x.id === d.id)!;
       const moveOne = <T extends { id: number; x: number; y: number }>(items: T[]) =>
         items.map((x) => (x.id === d.id ? { ...x, x: it.x + dx, y: it.y + dy } : x));
       if (d.kind === "circle") setCircles(moveOne);
-      else if (d.kind === "square") setSquares(moveOne);
       else setTexts(moveOne);
       return;
     }
@@ -840,6 +896,7 @@ export function Board() {
 
     const d = drag.current;
     drag.current = null;
+    setSnapGuides([]);
     if (!d || d.moved) return;
     // A click without moving selects just that thing: circles and texts open
     // their menu, lines show their end dots, arrow buttons and menu. Clicking
@@ -1183,6 +1240,29 @@ export function Board() {
             </div>
           );
         })}
+
+        {/* Guide lines while a square snaps, drawn above the squares and a
+            little past them. */}
+        {snapGuides.length > 0 && (
+          <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={BOARD_W} height={BOARD_H}>
+            {snapGuides.map((g, i) => {
+              const d = unit(g.a, g.b);
+              const ext = px(12);
+              return (
+                <line
+                  key={i}
+                  data-snap-guide
+                  x1={g.a.x - d.x * ext}
+                  y1={g.a.y - d.y * ext}
+                  x2={g.b.x + d.x * ext}
+                  y2={g.b.y + d.y * ext}
+                  stroke={SNAP_PINK}
+                  strokeWidth={px(1)}
+                />
+              );
+            })}
+          </svg>
+        )}
 
         {/* Text in the middle of lines. Drag it to move the line; double-click
             to edit it. */}
