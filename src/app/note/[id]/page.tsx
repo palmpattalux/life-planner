@@ -18,7 +18,7 @@ export default async function Page({
   const [note, children] = await Promise.all([
     supabase
       .from("pages")
-      .select("id, parent_id, title, content")
+      .select("id, parent_id, title, content, updated_at")
       .eq("id", id)
       .eq("kind", "note")
       .is("deleted_at", null)
@@ -35,6 +35,7 @@ export default async function Page({
     <NotePage
       id={note.data.id}
       parentId={note.data.parent_id}
+      loadedAt={note.data.updated_at}
       showOpen={open === "1"}
       title={note.data.title}
       body={(note.data.content as NoteContent).body ?? ""}

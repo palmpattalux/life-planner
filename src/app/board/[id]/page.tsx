@@ -19,7 +19,7 @@ export default async function Page({
   const [page, presets] = await Promise.all([
     supabase
       .from("pages")
-      .select("id, title, content")
+      .select("id, title, content, updated_at")
       .eq("id", id)
       .eq("kind", "board")
       .is("deleted_at", null)
@@ -36,6 +36,7 @@ export default async function Page({
     <BoardPage
       id={page.data.id}
       title={page.data.title}
+      loadedAt={page.data.updated_at}
       showOpen={open === "1"}
       initial={page.data.content as BoardData}
       presets={presets.data!.map((p) => ({ id: p.id, name: p.name, data: p.content as BoardData }) satisfies Preset)}

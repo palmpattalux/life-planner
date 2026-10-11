@@ -87,7 +87,7 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 | `src/app/actions.ts` | Making a new board, note or page |
 | `src/app/login/` | Log in and create account |
 | `src/lib/pages.ts` | What a saved page looks like |
-| `src/lib/useAutosave.ts` | Saves a page a moment after each change, in order |
+| `src/lib/useAutosave.ts` | Saves a page a moment after each change, in order; never overwrites newer work saved from another tab |
 | `src/lib/supabase/` | Connecting to Supabase (server, browser, login check) |
 | `src/middleware.ts` | Keeps you logged in and protects every page |
 | `src/components/board/Board.tsx` | The white board |

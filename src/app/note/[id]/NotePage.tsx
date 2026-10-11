@@ -12,6 +12,7 @@ export function NotePage({
   id,
   parentId,
   showOpen = false,
+  loadedAt,
   title: initialTitle,
   body: initialBody,
   pages,
@@ -19,11 +20,12 @@ export function NotePage({
   id: string;
   parentId: string | null;
   showOpen?: boolean;
+  loadedAt: string;
   title: string;
   body: string;
   pages: { id: string; kind: PageKind; title: string }[];
 }) {
-  const { save, status } = useAutosave(id);
+  const { save, status } = useAutosave(id, loadedAt);
   const [title, setTitle] = useState(initialTitle);
   const [body, setBody] = useState(initialBody);
   const [openPanel, setOpenPanel] = useState(showOpen);
@@ -42,7 +44,11 @@ export function NotePage({
             </Link>
           )}
         </div>
-        <span className="text-xs text-stone-400">{statusText[status]}</span>
+        <span
+          className={`text-xs ${status === "error" || status === "conflict" ? "font-medium text-red-600" : "text-stone-400"}`}
+        >
+          {statusText[status]}
+        </span>
       </div>
 
       <input

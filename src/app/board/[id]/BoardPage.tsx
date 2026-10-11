@@ -12,16 +12,18 @@ export function BoardPage({
   id,
   title: initialTitle,
   showOpen = false,
+  loadedAt,
   initial,
   presets: initialPresets,
 }: {
   id: string;
   title: string;
   showOpen?: boolean;
+  loadedAt: string;
   initial: BoardData;
   presets: Preset[];
 }) {
-  const { save, status } = useAutosave(id);
+  const { save, status } = useAutosave(id, loadedAt);
   const [title, setTitle] = useState(initialTitle);
   const [presets, setPresets] = useState(initialPresets);
   const supabase = useMemo(createClient, []);
@@ -72,7 +74,11 @@ export function BoardPage({
           }}
           className="w-44 rounded px-1.5 py-0.5 outline-none focus:bg-stone-100"
         />
-        <span className="text-xs text-stone-400">{statusText[status]}</span>
+        <span
+          className={`text-xs ${status === "error" || status === "conflict" ? "font-medium text-red-600" : "text-stone-400"}`}
+        >
+          {statusText[status]}
+        </span>
       </div>
       {openPanel && <OpenPanel currentId={id} onClose={() => setOpenPanel(false)} />}
     </>
