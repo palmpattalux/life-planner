@@ -19,6 +19,16 @@ import {
 } from "./geometry";
 import { CheckMark, ChecklistIcon, LinkButton, PinIcon, SquareIcon } from "./icons";
 import { LineMenu } from "./LineMenu";
+import {
+  domToRuns,
+  isPlain,
+  mergeRuns,
+  runLines,
+  runsToDom,
+  scaleSelection,
+  sliceRuns,
+  type Run,
+} from "./richText";
 import { tickValue, timelineTicks, type Timeline } from "./timeline";
 
 type View = { x: number; y: number; scale: number };
@@ -37,6 +47,9 @@ type Text = {
   fontSize: number;
   color: string;
   bold: boolean;
+  // Parts with their own size, boldness or colour. Left out when the whole
+  // text looks the same; otherwise the runs' text joined is `text`.
+  runs?: Run[];
   group?: number;
 };
 // A line end is either a free point or attached to a circle or text
@@ -1113,17 +1126,30 @@ export function Board() {
     const indent = line.match(/^ */)![0];
     const box = line[indent.length] === CHECKED ? UNCHECKED : CHECKED;
     lines[lineIndex] = indent + box + line.slice(indent.length + 1);
-    updateText(id, { text: lines.join("\n") });
+    // The box keeps its own size and colour.
+    const at = lines.slice(0, lineIndex).join("\n").length + (lineIndex > 0 ? 1 : 0) + indent.length;
+    const runs =
+      t.runs &&
+      mergeRuns([
+        ...sliceRuns(t.runs, 0, at),
+        { ...sliceRuns(t.runs, at, at + 1)[0], text: box },
+        ...sliceRuns(t.runs, at + 1),
+      ]);
+    updateText(id, { text: lines.join("\n"), runs });
   }
 
-  function confirmText(id: number, value: string) {
+  function confirmText(id: number, value: string, typed?: Run[]) {
     setEditing(null);
     // Keep the first line's indent, so only trailing space and blank leading lines go.
     const text = value.trim() ? value.replace(/^\s*\n/, "").trimEnd() : "";
+    const cut = value.length - value.replace(/^\s*\n/, "").length;
+    const kept = typed && sliceRuns(typed, cut, cut + text.length);
+    const runs = kept && !isPlain(kept) ? kept : undefined;
     const current = texts.find((t) => t.id === id);
-    if (!editingIsNew.current && current?.text !== text) commit();
+    const changed = current?.text !== text || JSON.stringify(current?.runs) !== JSON.stringify(runs);
+    if (!editingIsNew.current && changed) commit();
     if (text) {
-      setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, text } : t)));
+      setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, text, runs } : t)));
       return;
     }
     // An empty text would be invisible, so drop it.
@@ -1610,9 +1636,10 @@ export function Board() {
               {isEditing ? (
                 <TextEditor
                   initial={t.text + editingAppend.current}
+                  initialRuns={[...(t.runs ?? [{ text: t.text }]), { text: editingAppend.current }]}
                   style={style}
                   lists
-                  onConfirm={(value) => confirmText(t.id, value)}
+                  onConfirm={(value, runs) => confirmText(t.id, value, runs)}
                 />
               ) : (
                 <div
@@ -1625,16 +1652,20 @@ export function Board() {
                     boxShadow: inGroup ? `0 0 0 ${px(2)}px rgb(59 130 246 / 0.35)` : undefined,
                   }}
                 >
-                  {t.text.split("\n").map((full, i) => {
+                  {runLines(t.runs ?? [{ text: t.text }]).map((lineRuns, i) => {
+                    const full = lineRuns.map((r) => r.text).join("");
                     const indent = full.match(/^ */)![0];
                     const line = full.slice(indent.length);
                     const box = line[0] === UNCHECKED || line[0] === CHECKED;
+                    const boxRun = sliceRuns(lineRuns, indent.length, indent.length + 1)[0];
+                    const boxColor = boxRun?.color ?? t.color;
+                    const restFrom = indent.length + (box ? (line[1] === " " ? 2 : 1) : 0);
                     return (
                       <Fragment key={i}>
                         {i > 0 && "\n"}
                         {indent}
-                        {box ? (
-                          <>
+                        {box && (
+                          <span style={{ fontSize: boxRun.scale ? `${boxRun.scale}em` : undefined }}>
                             <span
                               data-checkbox
                               onPointerDown={(e) => e.stopPropagation()}
@@ -1645,16 +1676,25 @@ export function Board() {
                                 width: "0.85em",
                                 height: "0.85em",
                                 marginRight: "0.3em",
-                                border: `0.09em solid ${t.color}`,
+                                border: `0.09em solid ${boxColor}`,
                               }}
                             >
-                              {line[0] === CHECKED && <CheckMark color={t.color} />}
+                              {line[0] === CHECKED && <CheckMark color={boxColor} />}
                             </span>
-                            {line.slice(1).replace(/^ /, "")}
-                          </>
-                        ) : (
-                          line
+                          </span>
                         )}
+                        {sliceRuns(lineRuns, restFrom).map((r, j) => (
+                          <span
+                            key={j}
+                            style={{
+                              fontSize: r.scale ? `${r.scale}em` : undefined,
+                              fontWeight: r.bold === undefined ? undefined : r.bold ? 700 : 400,
+                              color: r.color,
+                            }}
+                          >
+                            {r.text}
+                          </span>
+                        ))}
                       </Fragment>
                     );
                   })}
@@ -2084,25 +2124,33 @@ function textBeforeCaret(el: HTMLElement): string {
 }
 
 // The text being typed. Enter starts a new line; clicking elsewhere confirms it.
-// Tab moves the caret's line right and Shift+Tab moves it back. With `lists`, Enter on a checklist line starts the next line with a box, and
-// on a numbered line with the next number. Enter on a line holding only the
-// box or number ends the list.
+// Tab moves the caret's line right and Shift+Tab moves it back. With `lists`,
+// Enter on a checklist line starts the next line with a box, and on a numbered
+// line with the next number. Enter on a line holding only the box or number
+// ends the list. With `initialRuns`, highlighted words can get their own size
+// (scroll wheel / trackpad), boldness (Ctrl+B or the B button) and colour from
+// a bar that shows above the text while something is highlighted.
 function TextEditor({
   initial,
+  initialRuns,
   style,
   lists = false,
   onConfirm,
 }: {
   initial: string;
+  initialRuns?: Run[];
   style: React.CSSProperties;
   lists?: boolean;
-  onConfirm: (value: string) => void;
+  onConfirm: (value: string, runs?: Run[]) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const rich = !!initialRuns;
+  const [highlight, setHighlight] = useState<{ bold: boolean } | null>(null);
 
   useEffect(() => {
     const el = ref.current!;
-    el.textContent = initial;
+    if (initialRuns) runsToDom(el, initialRuns);
+    else el.textContent = initial;
     el.focus({ preventScroll: true });
     // Put the cursor at the end.
     const range = document.createRange();
@@ -2114,54 +2162,129 @@ function TextEditor({
     // Only on mount: the text is typed into the element directly.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!rich) return;
+    const el = ref.current!;
+    const highlighted = () => {
+      const sel = window.getSelection();
+      return !!sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.getRangeAt(0).commonAncestorContainer);
+    };
+    // Show the B / colour bar while part of the text is highlighted.
+    function onSelectionChange() {
+      setHighlight(highlighted() ? { bold: document.queryCommandState("bold") } : null);
+    }
+    // Scroll wheel / trackpad over highlighted words resizes just those words.
+    function onWheel(e: WheelEvent) {
+      if (!highlighted()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      scaleSelection(el, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.002)));
+    }
+    document.addEventListener("selectionchange", onSelectionChange);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [rich]);
+
+  function format(command: "bold" | "foreColor", value?: string) {
+    document.execCommand("styleWithCSS", false, "true");
+    document.execCommand(command, false, value);
+    setHighlight({ bold: document.queryCommandState("bold") });
+  }
+
   return (
-    <div
-      ref={ref}
-      data-text-editor
-      contentEditable
-      suppressContentEditableWarning
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (e.key === "Tab") {
+    <div className="relative">
+      {highlight && (
+        <div
+          data-format-bar
+          // Keep the highlight: clicking the bar must not take focus from the text.
+          onMouseDown={(e) => e.preventDefault()}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute left-0 flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-stone-200 bg-white p-1.5 shadow-lg"
+          style={{ bottom: "100%", marginBottom: 8, fontSize: 14, fontWeight: 400, lineHeight: 1 }}
+        >
+          <button
+            aria-label="Bold"
+            onClick={() => format("bold")}
+            className={`flex size-6 items-center justify-center rounded text-sm font-bold text-stone-900 ${highlight.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+          >
+            B
+          </button>
+          {TEXT_COLORS.map((color) => (
+            <button
+              key={color}
+              aria-label={`Colour ${color}`}
+              onClick={() => format("foreColor", color)}
+              className="size-5 rounded-full"
+              style={{ background: color }}
+            />
+          ))}
+        </div>
+      )}
+      <div
+        ref={ref}
+        data-text-editor
+        contentEditable
+        suppressContentEditableWarning
+        onPointerDown={(e) => e.stopPropagation()}
+        onPaste={(e) => {
+          // Paste words only, not another page's styling.
           e.preventDefault();
-          const before = textBeforeCaret(e.currentTarget);
-          const sel = window.getSelection()!;
-          // Step to the start of the line, add or remove the indent there, then
-          // step back to where the caret was.
-          const moveCaret = (dir: "backward" | "forward", n: number) => {
-            for (let i = 0; i < n; i++) sel.modify("move", dir, "character");
-          };
-          moveCaret("backward", before.length);
-          if (!e.shiftKey) {
-            document.execCommand("insertText", false, INDENT);
-            moveCaret("forward", before.length);
+          document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
+        }}
+        onKeyDown={(e) => {
+          if (rich && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+            e.preventDefault();
+            format("bold");
             return;
           }
-          const remove = Math.min(before.match(/^ */)![0].length, INDENT.length);
-          for (let i = 0; i < remove; i++) document.execCommand("forwardDelete");
-          moveCaret("forward", before.length - remove);
-          return;
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const full = lists ? textBeforeCaret(e.currentTarget) : "";
-          const indent = full.match(/^ */)![0];
-          const line = full.slice(indent.length);
-          const number = line.match(/^(\d+)\. /);
-          const marker = /^[☐☑] /.test(line) ? `${UNCHECKED} ` : number ? `${Number(number[1]) + 1}. ` : "";
-          if (marker && line === (number ? number[0] : line.slice(0, 2))) {
-            // An empty list line: remove its box or number to end the list.
-            for (let i = 0; i < line.length; i++) document.execCommand("delete");
+          if (e.key === "Tab") {
+            e.preventDefault();
+            const before = textBeforeCaret(e.currentTarget);
+            const sel = window.getSelection()!;
+            // Step to the start of the line, add or remove the indent there, then
+            // step back to where the caret was.
+            const moveCaret = (dir: "backward" | "forward", n: number) => {
+              for (let i = 0; i < n; i++) sel.modify("move", dir, "character");
+            };
+            moveCaret("backward", before.length);
+            if (!e.shiftKey) {
+              document.execCommand("insertText", false, INDENT);
+              moveCaret("forward", before.length);
+              return;
+            }
+            const remove = Math.min(before.match(/^ */)![0].length, INDENT.length);
+            for (let i = 0; i < remove; i++) document.execCommand("forwardDelete");
+            moveCaret("forward", before.length - remove);
             return;
           }
-          document.execCommand("insertLineBreak");
-          // A list line keeps its indent on the next line.
-          if (marker) document.execCommand("insertText", false, indent + marker);
-        }
-      }}
-      onBlur={(e) => onConfirm(e.currentTarget.innerText)}
-      className="min-w-[1ch] cursor-text whitespace-pre bg-white px-1 outline-none"
-      style={{ ...style, userSelect: "text", caretColor: style.color }}
-    />
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const full = lists ? textBeforeCaret(e.currentTarget) : "";
+            const indent = full.match(/^ */)![0];
+            const line = full.slice(indent.length);
+            const number = line.match(/^(\d+)\. /);
+            const marker = /^[☐☑] /.test(line) ? `${UNCHECKED} ` : number ? `${Number(number[1]) + 1}. ` : "";
+            if (marker && line === (number ? number[0] : line.slice(0, 2))) {
+              // An empty list line: remove its box or number to end the list.
+              for (let i = 0; i < line.length; i++) document.execCommand("delete");
+              return;
+            }
+            document.execCommand("insertLineBreak");
+            // A list line keeps its indent on the next line.
+            if (marker) document.execCommand("insertText", false, indent + marker);
+          }
+        }}
+        onBlur={(e) => {
+          if (!rich) return onConfirm(e.currentTarget.innerText);
+          const runs = domToRuns(e.currentTarget);
+          onConfirm(runs.map((r) => r.text).join(""), runs);
+        }}
+        className="min-w-[1ch] cursor-text whitespace-pre bg-white px-1 outline-none"
+        style={{ ...style, userSelect: "text", caretColor: style.color }}
+      />
+    </div>
   );
 }
