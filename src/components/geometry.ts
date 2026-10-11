@@ -67,3 +67,39 @@ export function mergeBoxes(boxes: Box[]): Box | null {
     maxY: Math.max(...boxes.map((b) => b.maxY)),
   };
 }
+
+export function boxesTouch(a: Box, b: Box) {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
+export function circleTouchesBox(c: Point, r: number, box: Box) {
+  const x = Math.min(box.maxX, Math.max(box.minX, c.x));
+  const y = Math.min(box.maxY, Math.max(box.minY, c.y));
+  return dist(c, { x, y }) <= r;
+}
+
+// Whether the straight piece a-b passes through the box (clipping a to b
+// against each side of the box).
+export function segmentTouchesBox(a: Point, b: Point, box: Box) {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const sides: [number, number][] = [
+    [-dx, a.x - box.minX],
+    [dx, box.maxX - a.x],
+    [-dy, a.y - box.minY],
+    [dy, box.maxY - a.y],
+  ];
+  for (const [p, q] of sides) {
+    if (p === 0) {
+      if (q < 0) return false;
+    } else {
+      const t = q / p;
+      if (p < 0) t0 = Math.max(t0, t);
+      else t1 = Math.min(t1, t);
+      if (t0 > t1) return false;
+    }
+  }
+  return true;
+}

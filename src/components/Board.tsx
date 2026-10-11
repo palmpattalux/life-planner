@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   boxAround,
-  boxContains,
+  boxesTouch,
+  circleTouchesBox,
   mergeBoxes,
   newBend,
   pointAlong,
   polylineLength,
+  segmentTouchesBox,
   unit,
   type Box,
   type Point,
@@ -16,7 +18,9 @@ import { LineMenu } from "./LineMenu";
 import { timelineTicks, type Timeline } from "./timeline";
 
 type View = { x: number; y: number; scale: number };
-type Circle = { id: number; x: number; y: number; size: number };
+// `group`: things grouped together share a group number and are selected
+// and moved as one.
+type Circle = { id: number; x: number; y: number; size: number; group?: number };
 type Text = {
   id: number;
   x: number; // centre
@@ -25,6 +29,7 @@ type Text = {
   fontSize: number;
   color: string;
   bold: boolean;
+  group?: number;
 };
 // A line end is either a free point or attached to a circle or text
 // (fromItem / toItem), in which case it sits at that item's centre and
@@ -40,6 +45,7 @@ type Line = {
   fromArrow?: boolean;
   toArrow?: boolean;
   time?: Timeline;
+  group?: number;
 };
 type End = "from" | "to";
 // Everything on the board. Kept as one object so every change can be undone
@@ -155,12 +161,17 @@ export function Board() {
     bendIndex?: number;
     start: Point; // board position where the drag began
     orig: BoardData;
-    group: Key[] | null; // set when dragging a multi-selection
+    many: Key[] | null; // set when dragging several things together
     startX: number;
     startY: number;
     moved: boolean;
   } | null>(null);
   const nextId = useRef(1);
+  // What Ctrl+C copied, ready for Ctrl+V.
+  const clipboard = useRef<BoardData | null>(null);
+  // Groups of things saved with the Preset button, to be added later on.
+  const presets = useRef<BoardData[]>([]);
+  const [presetSaved, setPresetSaved] = useState(false);
 
   // Remember the board as it is now, so the next change can be undone.
   function commit() {
@@ -221,6 +232,72 @@ export function Board() {
     }
     const l = data.lines.find((l) => l.id === id);
     return l ? boxAround(pointsOf(resolve(l, data))) : null;
+  }
+
+  // Whether a thing touches the selection box at all.
+  function touches(key: Key, area: Box): boolean {
+    const [kind, idStr] = key.split(":");
+    const id = Number(idStr);
+    if (kind === "circle") {
+      const c = circles.find((c) => c.id === id);
+      return !!c && circleTouchesBox(c, c.size / 2, area);
+    }
+    if (kind === "text") {
+      const box = boxOf(key);
+      return !!box && boxesTouch(box, area);
+    }
+    const l = lines.find((l) => l.id === id);
+    if (!l) return false;
+    const pts = pointsOf(resolve(l));
+    return pts.some((p, i) => i > 0 && segmentTouchesBox(pts[i - 1], p, area));
+  }
+
+  // These keys plus everything grouped with any of them.
+  function withGroups(keys: Key[], data: BoardData = boardRef.current): Key[] {
+    const all: [Key, number | undefined][] = [
+      ...data.circles.map((c) => [keyOf("circle", c.id), c.group] as [Key, number | undefined]),
+      ...data.texts.map((t) => [keyOf("text", t.id), t.group] as [Key, number | undefined]),
+      ...data.lines.map((l) => [keyOf("line", l.id), l.group] as [Key, number | undefined]),
+    ];
+    const groups = new Set(all.filter(([k, g]) => g !== undefined && keys.includes(k)).map(([, g]) => g));
+    return all.filter(([k, g]) => keys.includes(k) || (g !== undefined && groups.has(g))).map(([k]) => k);
+  }
+
+  // The selected things, as their own little board (for copy and presets).
+  // Line ends stay attached only to things that are copied too.
+  function pickOut(keys: Key[], data: BoardData): BoardData {
+    const cIds = idsOf(keys, "circle");
+    const tIds = idsOf(keys, "text");
+    const lIds = idsOf(keys, "line");
+    const kept = (id?: number) => (id !== undefined && (cIds.has(id) || tIds.has(id)) ? id : undefined);
+    return structuredClone({
+      circles: data.circles.filter((c) => cIds.has(c.id)),
+      texts: data.texts.filter((t) => tIds.has(t.id)),
+      lines: data.lines
+        .filter((l) => lIds.has(l.id))
+        .map((l) => ({ ...resolve(l, data), fromItem: kept(l.fromItem), toItem: kept(l.toItem) })),
+    });
+  }
+
+  // Group the selected things, or ungroup them if they already are one group.
+  function toggleGroup(isGroup: boolean) {
+    const sel = selectionRef.current;
+    const cIds = idsOf(sel, "circle");
+    const tIds = idsOf(sel, "text");
+    const lIds = idsOf(sel, "line");
+    const group = isGroup ? undefined : nextId.current++;
+    commit();
+    setBoard((b) => ({
+      circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, group } : c)),
+      texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, group } : t)),
+      lines: b.lines.map((l) => (lIds.has(l.id) ? { ...l, group } : l)),
+    }));
+  }
+
+  function savePreset() {
+    presets.current.push(pickOut(selectionRef.current, boardRef.current));
+    setPresetSaved(true);
+    setTimeout(() => setPresetSaved(false), 1200);
   }
 
   // Start with the middle of the board in the middle of the screen.
@@ -351,6 +428,55 @@ export function Board() {
       return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
     };
 
+    // Add a copy of `items` centred on `at`, with new ids, and select it.
+    function paste(items: BoardData, at: Point) {
+      const pts = [
+        ...items.circles,
+        ...items.texts,
+        ...items.lines.flatMap((l) => pointsOf(l)),
+      ];
+      const box = boxAround(pts);
+      const dx = at.x - (box.minX + box.maxX) / 2;
+      const dy = at.y - (box.minY + box.maxY) / 2;
+      const move = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
+      const ids = new Map<number, number>();
+      const newId = (old: number) => {
+        if (!ids.has(old)) ids.set(old, nextId.current++);
+        return ids.get(old)!;
+      };
+      const groups = new Map<number, number>();
+      const newGroup = (g?: number) => {
+        if (g === undefined) return undefined;
+        if (!groups.has(g)) groups.set(g, nextId.current++);
+        return groups.get(g);
+      };
+      const copy = structuredClone(items);
+      const circles = copy.circles.map((c) => ({ ...c, ...move(c), id: newId(c.id), group: newGroup(c.group) }));
+      const texts = copy.texts.map((t) => ({ ...t, ...move(t), id: newId(t.id), group: newGroup(t.group) }));
+      const lines = copy.lines.map((l) => ({
+        ...l,
+        id: nextId.current++,
+        from: move(l.from),
+        to: move(l.to),
+        bends: l.bends?.map(move),
+        fromItem: l.fromItem !== undefined ? newId(l.fromItem) : undefined,
+        toItem: l.toItem !== undefined ? newId(l.toItem) : undefined,
+        group: newGroup(l.group),
+      }));
+      commit();
+      setBoard((b) => ({
+        circles: [...b.circles, ...circles],
+        texts: [...b.texts, ...texts],
+        lines: [...b.lines, ...lines],
+      }));
+      setSelection([
+        ...circles.map((c) => keyOf("circle", c.id)),
+        ...texts.map((t) => keyOf("text", t.id)),
+        ...lines.map((l) => keyOf("line", l.id)),
+      ]);
+      setEditing(null);
+    }
+
     function undo() {
       const prev = history.current.pop();
       if (!prev) return;
@@ -370,6 +496,19 @@ export function Board() {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
         e.preventDefault();
         undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        const sel = selectionRef.current;
+        if (sel.length === 0) return;
+        e.preventDefault();
+        clipboard.current = pickOut(sel, boardRef.current);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        if (!clipboard.current) return;
+        e.preventDefault();
+        paste(clipboard.current, cursorOnBoard());
         return;
       }
       if (e.key === "Backspace" || e.key === "Delete") {
@@ -435,10 +574,10 @@ export function Board() {
     const o = d.orig;
 
     // Several things selected: move them all together.
-    if (d.group) {
-      const cIds = idsOf(d.group, "circle");
-      const tIds = idsOf(d.group, "text");
-      const lIds = idsOf(d.group, "line");
+    if (d.many) {
+      const cIds = idsOf(d.many, "circle");
+      const tIds = idsOf(d.many, "text");
+      const lIds = idsOf(d.many, "line");
       const movesWithItem = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id));
       setBoard({
         circles: o.circles.map((c) => (cIds.has(c.id) ? { ...c, ...move(c) } : c)),
@@ -511,14 +650,16 @@ export function Board() {
     e.currentTarget.setPointerCapture(e.pointerId);
     const sel = selectionRef.current;
     const itemKind: Kind | null = kind === "circle" || kind === "text" || kind === "line" ? kind : null;
-    const inGroup = itemKind !== null && sel.length > 1 && sel.includes(keyOf(itemKind, id));
+    const inSelection = itemKind !== null && sel.length > 1 && sel.includes(keyOf(itemKind, id));
+    const grouped = itemKind !== null ? withGroups([keyOf(itemKind, id)]) : [];
+    const many = inSelection ? sel : grouped.length > 1 ? grouped : null;
     drag.current = {
       kind,
       id,
       bendIndex,
       start: toBoard(e.clientX, e.clientY),
       orig: boardRef.current,
-      group: inGroup ? sel : null,
+      many,
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
@@ -549,12 +690,7 @@ export function Board() {
         ...texts.map((t) => keyOf("text", t.id)),
         ...lines.map((l) => keyOf("line", l.id)),
       ];
-      setSelection(
-        all.filter((k) => {
-          const box = boxOf(k);
-          return box && boxContains(area, box);
-        }),
-      );
+      setSelection(withGroups(all.filter((k) => touches(k, area))));
       return;
     }
 
@@ -566,7 +702,9 @@ export function Board() {
     // a selected circle or text again deselects it.
     if (d.kind === "circle" || d.kind === "text" || d.kind === "line") {
       const k = keyOf(d.kind, d.id);
-      setSelection((s) => (s.length === 1 && s[0] === k && d.kind !== "line" ? [] : [k]));
+      const grouped = withGroups([k]);
+      if (grouped.length > 1) setSelection(grouped);
+      else setSelection((s) => (s.length === 1 && s[0] === k && d.kind !== "line" ? [] : [k]));
     }
   }
 
@@ -682,6 +820,17 @@ export function Board() {
   const selectedLine = single?.startsWith("line:") ? lines.find((l) => l.id === singleId) : undefined;
   const groupBox =
     selection.length > 1 ? mergeBoxes(selection.map((k) => boxOf(k)).filter((b): b is Box => !!b)) : null;
+  // Whether the selection is exactly one group (then the button ungroups).
+  const groupOf = (k: Key) => {
+    const [kind, idStr] = k.split(":");
+    const list: { id: number; group?: number }[] = kind === "circle" ? circles : kind === "text" ? texts : lines;
+    return list.find((x) => x.id === Number(idStr))?.group;
+  };
+  const isOneGroup =
+    selection.length > 1 &&
+    groupOf(selection[0]) !== undefined &&
+    selection.every((k) => groupOf(k) === groupOf(selection[0])) &&
+    withGroups(selection, board).length === selection.length;
   const toPolyline = (pts: Point[]) => pts.map((p) => `${p.x},${p.y}`).join(" ");
   const px = (n: number) => n / view.scale; // a size in screen pixels, in board units
 
@@ -1019,7 +1168,34 @@ export function Board() {
             }}
           />
         )}
+        {groupBox && (
+          // Beside the selection box; stays the same size on screen.
+          <button
+            data-group-button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => toggleGroup(isOneGroup)}
+            className="absolute origin-top-left rounded-md border border-stone-200 bg-white px-2 py-1 text-sm shadow"
+            style={{
+              left: groupBox.maxX + px(12),
+              top: groupBox.minY - px(6),
+              transform: `scale(${1 / view.scale})`,
+            }}
+          >
+            {isOneGroup ? "Ungroup" : "Group"}
+          </button>
+        )}
       </div>
+
+      {selection.length > 1 && (
+        <button
+          data-preset-button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={savePreset}
+          className="absolute right-4 top-4 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium shadow"
+        >
+          {presetSaved ? "Preset saved" : "Preset"}
+        </button>
+      )}
 
       {marquee && (
         <div
