@@ -1,21 +1,23 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Board } from "@/components/board/Board";
 import { EMPTY_BOARD, type BoardData, type Preset } from "@/components/board/model";
 import { createClient } from "@/lib/supabase/client";
 import { statusText, useAutosave } from "@/lib/useAutosave";
+import { OpenPanel, useMarkOpened } from "../../OpenPanel";
 
 // A saved board: the whiteboard, saved as you go, with a way back Home.
 export function BoardPage({
   id,
   title: initialTitle,
+  showOpen = false,
   initial,
   presets: initialPresets,
 }: {
   id: string;
   title: string;
+  showOpen?: boolean;
   initial: BoardData;
   presets: Preset[];
 }) {
@@ -23,6 +25,8 @@ export function BoardPage({
   const [title, setTitle] = useState(initialTitle);
   const [presets, setPresets] = useState(initialPresets);
   const supabase = useMemo(createClient, []);
+  const [openPanel, setOpenPanel] = useState(showOpen);
+  useMarkOpened(id);
 
   async function savePreset(data: BoardData) {
     // Named Preset 1, Preset 2, ... after the highest number so far.
@@ -56,9 +60,9 @@ export function BoardPage({
         onDeletePreset={deletePreset}
       />
       <div className="fixed left-4 top-4 flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2 py-1 text-sm shadow">
-        <Link href="/" className="rounded px-1.5 py-0.5 font-medium hover:bg-stone-100">
-          Home
-        </Link>
+        <button onClick={() => setOpenPanel(true)} className="rounded px-1.5 py-0.5 font-medium hover:bg-stone-100">
+          Projects
+        </button>
         <input
           value={title}
           placeholder="Untitled board"
@@ -70,6 +74,7 @@ export function BoardPage({
         />
         <span className="text-xs text-stone-400">{statusText[status]}</span>
       </div>
+      {openPanel && <OpenPanel currentId={id} onClose={() => setOpenPanel(false)} />}
     </>
   );
 }

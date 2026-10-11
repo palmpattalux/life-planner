@@ -2,7 +2,7 @@
 
 A huge white board, like Miro, with faint grey dots and a light grey line at its edge. Log in from any device.
 
-**Home** lists everything you've saved. **New board** makes a white board and **New note** makes a note. Boards and notes save by themselves as you work (the top left says Saved). On a board, the top left has **Home** to go back and the board's name, which you can type over. A note has a title, a space to write, and **+ Add page** to make pages inside it.
+Opening the app goes straight to the project you opened last, with an **Open?** box on the right listing all your projects so you can switch with one click (click anywhere else or the x to close it; **Projects** at the top left opens it again). Hovering a project shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. The box also has **New board** and **New note**. Boards and notes save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left. A note has a title, a space to write, and **+ Add page** to make pages inside it.
 
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
@@ -13,12 +13,12 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Click a line and choose **Time**, then Day, Week, Month or Year. The line becomes a timeline, like a ruler.
   - **Day** (0–31), **Week** (1–4) and **Year**: two slots, Beginning → End. Type a number or scroll over a slot to count up or down. Enter moves from Beginning to End, and Enter again finishes.
   - **Month**: pick the beginning month (Jan–Dec), then the end month. It can wrap round the year, e.g. Nov → Feb.
-- Click a timeline and a **Phase** box appears above the first third of it. Press Phase, move along the timeline (the stretch shows in orange), click to set the start, then click again or press Enter to finish (Escape cancels). The stretch becomes a phase beside the original (on the right of an upright timeline, above a level one), no longer connected to it. A phase looks like a bracket "]": its ends curl toward the original timeline and it shows only its start and end dates, with no marks in between.
+- Click a timeline and a **Phase** box appears beside the first third of it (above a level timeline, left of an upright one, clear of the end dots). Press Phase, move along the timeline (the stretch shows in orange), click to set the start, then click again or press Enter to finish (Escape cancels). The stretch becomes a phase beside the original (on the right of an upright timeline, above a level one), no longer connected to it. A phase looks like a bracket "]": its ends curl toward the original timeline and it shows only its start and end dates, with no marks in between.
 - Between Phase and Pin are colour dots that recolour the timeline (line, marks, labels and arrowheads).
 - The same box has **Pin** (pin icon): press it, move along the timeline and click a mark. That mark becomes bigger and bold, and a small box opens with **B** (turn bold off or on) and colours. Click a pinned mark to open its box again.
 - Click a line to show an arrow button beside each end. Click one to give that end an arrowhead; click again to remove it.
 - Click a line and choose **Text** to type text in the middle of the line. Double-click that text to edit it.
-- Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends: the new one goes in the middle of the part of the line you clicked on (between the nearest bend and that tip).
+- Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends: the new one goes in the middle of the part of the line you clicked on (between the nearest bend and that tip). Click a bend and press Backspace or Delete to remove it; the line goes straight there.
 - Click anything and press **Backspace** to delete it.
 - **Ctrl+Z** (or Cmd+Z) undoes any change: adding, moving, resizing, recolouring, arrows, bends, deleting. **Ctrl+Shift+Z** (or Cmd+Shift+Z) redoes it.
 - Drag on an empty part of the board to draw a selection box. Everything it touches is selected: drag any of them, or anywhere inside the dashed box, to move them all. Pinch (or mouse wheel) with the cursor inside the box resizes them all; a two-finger swipe, or anything outside the box, moves around the board as usual.
@@ -80,7 +80,8 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 
 | Path | What it does |
 | --- | --- |
-| `src/app/page.tsx` | Home: every saved board and note |
+| `src/app/page.tsx` | Opens the most recent project (or offers to start one) |
+| `src/app/OpenPanel.tsx` | The Open? box: switch, remove (trash), duplicate, restore |
 | `src/app/board/[id]/` | A saved board (saves as you go, keeps presets) |
 | `src/app/note/[id]/` | A note and the pages inside it |
 | `src/app/actions.ts` | Making a new board, note or page |

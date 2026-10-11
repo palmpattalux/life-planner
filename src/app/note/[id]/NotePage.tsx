@@ -5,17 +5,20 @@ import { useState } from "react";
 import { untitled, type PageKind } from "@/lib/pages";
 import { statusText, useAutosave } from "@/lib/useAutosave";
 import { createPage } from "../../actions";
+import { OpenPanel, useMarkOpened } from "../../OpenPanel";
 
 // A note: a title, the note itself, and pages inside it. Saved as you type.
 export function NotePage({
   id,
   parentId,
+  showOpen = false,
   title: initialTitle,
   body: initialBody,
   pages,
 }: {
   id: string;
   parentId: string | null;
+  showOpen?: boolean;
   title: string;
   body: string;
   pages: { id: string; kind: PageKind; title: string }[];
@@ -23,13 +26,22 @@ export function NotePage({
   const { save, status } = useAutosave(id);
   const [title, setTitle] = useState(initialTitle);
   const [body, setBody] = useState(initialBody);
+  const [openPanel, setOpenPanel] = useState(showOpen);
+  useMarkOpened(id);
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-8">
       <div className="flex items-center justify-between text-sm">
-        <Link href={parentId ? `/note/${parentId}` : "/"} className="text-stone-500 hover:text-stone-900">
-          ← {parentId ? "Back" : "Home"}
-        </Link>
+        <div className="flex gap-3">
+          <button onClick={() => setOpenPanel(true)} className="font-medium text-stone-700 hover:text-stone-900">
+            Projects
+          </button>
+          {parentId && (
+            <Link href={`/note/${parentId}`} className="text-stone-500 hover:text-stone-900">
+              ← Back
+            </Link>
+          )}
+        </div>
         <span className="text-xs text-stone-400">{statusText[status]}</span>
       </div>
 
@@ -68,6 +80,7 @@ export function NotePage({
           ))}
         </div>
       </div>
+      {openPanel && <OpenPanel currentId={id} onClose={() => setOpenPanel(false)} />}
     </main>
   );
 }

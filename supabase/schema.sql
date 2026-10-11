@@ -24,6 +24,11 @@ create table if not exists public.presets (
   created_at timestamptz not null default now()
 );
 
+-- Added later: when a page was last opened (the app opens the most recent
+-- one), and when it was moved to the trash (deleted for good after 30 days).
+alter table public.pages add column if not exists opened_at timestamptz;
+alter table public.pages add column if not exists deleted_at timestamptz;
+
 create index if not exists pages_user_idx on public.pages (user_id, parent_id, updated_at desc);
 create index if not exists presets_user_idx on public.presets (user_id, created_at);
 

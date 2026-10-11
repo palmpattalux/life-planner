@@ -5,12 +5,25 @@ import type { BoardData, Preset } from "@/components/board/model";
 import { SetupNeeded } from "../../SetupNeeded";
 import { BoardPage } from "./BoardPage";
 
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+export default async function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ open?: string }>;
+}) {
   const { id } = await params;
+  const { open } = await searchParams;
   if (!isPageId(id)) notFound();
   const { supabase } = await requireUser();
   const [page, presets] = await Promise.all([
-    supabase.from("pages").select("id, title, content").eq("id", id).eq("kind", "board").maybeSingle(),
+    supabase
+      .from("pages")
+      .select("id, title, content")
+      .eq("id", id)
+      .eq("kind", "board")
+      .is("deleted_at", null)
+      .maybeSingle(),
     supabase.from("presets").select("id, name, content").order("created_at"),
   ]);
   for (const error of [page.error, presets.error]) {
@@ -23,6 +36,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     <BoardPage
       id={page.data.id}
       title={page.data.title}
+      showOpen={open === "1"}
       initial={page.data.content as BoardData}
       presets={presets.data!.map((p) => ({ id: p.id, name: p.name, data: p.content as BoardData }) satisfies Preset)}
     />

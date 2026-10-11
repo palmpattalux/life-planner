@@ -20,4 +20,9 @@ export const isPageId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 
 // Whether a database error means the tables haven't been made yet
 // (supabase/schema.sql hasn't been run).
-export const tablesMissing = (error: { code?: string }) => error.code === "42P01" || error.code === "PGRST205";
+// (42703: a column added later is missing, so the latest schema hasn't been run.)
+export const tablesMissing = (error: { code?: string }) =>
+  error.code === "42P01" || error.code === "PGRST205" || error.code === "42703";
+
+// Removed pages stay in the trash this long, then are deleted for good.
+export const TRASH_DAYS = 30;

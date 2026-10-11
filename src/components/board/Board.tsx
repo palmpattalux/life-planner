@@ -141,6 +141,10 @@ export function Board({
   } | null>(null);
   // The pinned mark whose box (bold, colours) is showing.
   const [pinMenu, setPinMenu] = useState<{ lineId: number; value: string } | null>(null);
+  // The angle point clicked on the selected line; Backspace / Delete removes it.
+  const [selectedBend, setSelectedBend] = useState<{ lineId: number; index: number } | null>(null);
+  const selectedBendRef = useRef(selectedBend);
+  selectedBendRef.current = selectedBend;
   // Alignment lines shown while a square snaps to other squares.
   const [snapGuides, setSnapGuides] = useState<{ a: Point; b: Point }[]>([]);
   // Which line's middle text is being typed.
@@ -679,6 +683,15 @@ export function Board({
       if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
         const sel = selectionRef.current;
+        // A clicked angle point goes first: the line straightens there.
+        const bend = selectedBendRef.current;
+        if (bend && sel.length === 1 && sel[0] === keyOf("line", bend.lineId)) {
+          const line = boardRef.current.lines.find((l) => l.id === bend.lineId);
+          const bends = line?.bends?.filter((_, i) => i !== bend.index);
+          setSelectedBend(null);
+          if (line) updateLine(line.id, { bends: bends?.length ? bends : undefined });
+          return;
+        }
         if (sel.length === 0) return;
         commit();
         removeKeys(sel);
@@ -902,6 +915,7 @@ export function Board({
   function startDrag(e: React.PointerEvent, kind: DragKind, id: number, index?: number) {
     e.stopPropagation();
     setPinMenu(null);
+    setSelectedBend(null);
     e.currentTarget.setPointerCapture(e.pointerId);
     const sel = selectionRef.current;
     const itemKind: Kind | null =
@@ -973,6 +987,7 @@ export function Board({
     drag.current = null;
     setSnapGuides([]);
     if (!d || d.moved) return;
+    if (d.kind === "bend") setSelectedBend({ lineId: d.id, index: d.index! });
     // A click without moving selects just that thing: circles and texts open
     // their menu, lines show their end dots, arrow buttons and menu. Clicking
     // a selected circle or text again deselects it.
@@ -1767,7 +1782,8 @@ export function Board({
                       width={px(10)}
                       height={px(10)}
                       transform={`rotate(45 ${p.x} ${p.y})`}
-                      fill="white"
+                      data-selected={selectedBend?.lineId === l.id && selectedBend.index === i ? "yes" : undefined}
+                      fill={selectedBend?.lineId === l.id && selectedBend.index === i ? SELECT_BLUE : "white"}
                       stroke={INK}
                       strokeWidth={px(1.5)}
                       className="pointer-events-auto cursor-move"
@@ -1844,13 +1860,18 @@ export function Board({
           (() => {
             const { pts, labels, len } = timelineGeometry(selectedLine);
             if (labels.length < 2) return null;
-            const at = pointAlong(pts, len / 3).p;
+            const { p: at, dir } = pointAlong(pts, len / 3);
+            // Beside the line, on its upper or left side, clear of the line
+            // itself so it never covers an end dot.
+            let n = { x: dir.y, y: -dir.x };
+            if (n.y > 1e-6 || (Math.abs(n.y) <= 1e-6 && n.x > 0)) n = { x: -n.x, y: -n.y };
+            const toSide = Math.abs(n.x) > Math.abs(n.y);
             return (
               <div
                 data-menu="phase"
                 onPointerDown={(e) => e.stopPropagation()}
-                className="absolute flex -translate-x-1/2 -translate-y-full flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-                style={{ left: at.x, top: at.y - px(14) }}
+                className={`absolute flex flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg ${toSide ? "-translate-x-full -translate-y-1/2" : "-translate-x-1/2 -translate-y-full"}`}
+                style={{ left: at.x + n.x * px(14), top: at.y + n.y * px(14) }}
               >
                 <button
                   onClick={() => {
