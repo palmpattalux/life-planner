@@ -2,24 +2,55 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { TRASH_DAYS, untitled, type PageKind } from "@/lib/pages";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { TRASH_DAYS, untitled } from "@/lib/pages";
 import { createClient } from "@/lib/supabase/client";
 import { createPage } from "./actions";
 
-type Project = { id: string; kind: PageKind; title: string; deleted_at: string | null };
+type Project = { id: string; title: string; deleted_at: string | null };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const GAP = 12;
+// Below this the boxes stop shrinking and the box scrolls instead.
+const MIN_TILE = 96;
 
-// The "Open?" box on the right third of the screen: every project, so it's
-// one click to switch away from the one that opened by itself. Hovering a
-// project shows Remove (to the trash for 30 days) and Duplicate. Clicking
-// anywhere else or the x closes it.
+// How to lay out n boxes so together they fill a w by h area: the number of
+// columns that keeps the boxes closest to square, and each box's size.
+function tileLayout(n: number, w: number, h: number) {
+  if (w <= 0 || h <= 0) return { cols: 1, tw: 0, th: 0 };
+  let best = { cols: 1, tw: 0, th: 0 };
+  for (let cols = 1; cols <= Math.max(1, n); cols++) {
+    const rows = Math.max(1, Math.ceil(n / cols));
+    const tw = (w - (cols - 1) * GAP) / cols;
+    const th = (h - (rows - 1) * GAP) / rows;
+    if (Math.min(tw, th) > Math.min(best.tw, best.th)) best = { cols, tw, th };
+  }
+  if (Math.min(best.tw, best.th) >= MIN_TILE) return best;
+  // Too many to fit: smallest boxes, as many across as fit, and scroll.
+  const cols = Math.max(1, Math.floor((w + GAP) / (MIN_TILE + GAP)));
+  const tw = (w - (cols - 1) * GAP) / cols;
+  return { cols, tw, th: tw };
+}
+
+// The "Open?" box on the right third of the screen: every board, as boxes that
+// share out its space (the more boards, the smaller each box), so it's one
+// click to switch away from the one that opened by itself. Hovering a board
+// shows Remove (to the trash for 30 days) and Duplicate. Clicking anywhere
+// else or the x closes it. Only boards show here; notes are an extra.
 export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: () => void }) {
   const supabase = useMemo(createClient, []);
   const router = useRouter();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [showTrash, setShowTrash] = useState(false);
+  // The space the board boxes fill.
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [area, setArea] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = areaRef.current!;
+    const observer = new ResizeObserver(() => setArea({ w: el.clientWidth, h: el.clientHeight }));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   async function load() {
     // Anything in the trash longer than 30 days is deleted for good.
@@ -29,7 +60,8 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
       .lt("deleted_at", new Date(Date.now() - TRASH_DAYS * DAY_MS).toISOString());
     const { data } = await supabase
       .from("pages")
-      .select("id, kind, title, deleted_at")
+      .select("id, title, deleted_at")
+      .eq("kind", "board")
       .is("parent_id", null)
       .order("opened_at", { ascending: false, nullsFirst: false })
       .order("updated_at", { ascending: false });
@@ -59,7 +91,7 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
     if (!data) return;
     await supabase
       .from("pages")
-      .insert({ kind: p.kind, title: `${p.title || untitled(p.kind)} copy`, content: data.content });
+      .insert({ kind: "board", title: `${p.title || untitled("board")} copy`, content: data.content });
     void load();
   }
 
@@ -83,61 +115,74 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3">
-          {projects === null && <p className="px-2 text-sm text-stone-400">Loading…</p>}
-          {live.map((p) => (
-            <div key={p.id} data-project={p.id} className="group flex items-center gap-2 rounded-md hover:bg-stone-100">
-              <Link
-                href={`/${p.kind}/${p.id}`}
-                onClick={p.id === currentId ? onClose : undefined}
-                className="min-w-0 flex-1 truncate px-2 py-2"
-              >
-                <span className="mr-2 text-xs uppercase tracking-wide text-stone-400">{p.kind}</span>
-                {p.title || untitled(p.kind)}
-                {p.id === currentId && <span className="ml-2 text-xs text-stone-400">open now</span>}
-              </Link>
-              <div className="hidden shrink-0 gap-1 pr-2 group-hover:flex">
-                <button onClick={() => remove(p)} className="rounded px-2 py-1 text-xs hover:bg-white">
-                  Remove
-                </button>
-                <button onClick={() => duplicate(p)} className="rounded px-2 py-1 text-xs hover:bg-white">
-                  Duplicate
-                </button>
-              </div>
-            </div>
-          ))}
-
-          {trash.length > 0 && (
-            <div className="mt-4 border-t border-stone-200 pt-3">
-              <button
-                onClick={() => setShowTrash((t) => !t)}
-                className="px-2 py-1 text-sm text-stone-500 hover:text-stone-900"
-              >
-                Trash ({trash.length}) {showTrash ? "▾" : "▸"}
-              </button>
-              {showTrash &&
-                trash.map((p) => (
-                  <div key={p.id} data-trashed={p.id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
-                    <span className="min-w-0 flex-1 truncate text-stone-500">{p.title || untitled(p.kind)}</span>
-                    <span className="shrink-0 text-xs text-stone-400">{daysLeft(p)} days left</span>
-                    <button
-                      onClick={() => restore(p)}
-                      className="shrink-0 rounded px-2 py-1 text-xs hover:bg-stone-100"
+        <div ref={areaRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+          {projects === null && <p className="text-sm text-stone-400">Loading…</p>}
+          {projects !== null && live.length === 0 && <p className="text-sm text-stone-400">No boards yet.</p>}
+          {(() => {
+            // Inside the padding (px-5 pb-5 = 20px each side).
+            const { cols, tw, th } = tileLayout(live.length, area.w - 40, area.h - 20);
+            return (
+              <div className="grid" style={{ gridTemplateColumns: `repeat(${cols}, ${tw}px)`, gap: GAP }}>
+                {live.map((p) => (
+                  <div
+                    key={p.id}
+                    data-project={p.id}
+                    className={`group relative rounded-xl border-2 bg-stone-50 hover:border-stone-400 ${p.id === currentId ? "border-stone-900" : "border-stone-200"}`}
+                    style={{ height: th }}
+                  >
+                    <Link
+                      href={`/board/${p.id}`}
+                      onClick={p.id === currentId ? onClose : undefined}
+                      className="flex size-full flex-col items-center justify-center gap-1 overflow-hidden p-3 text-center"
                     >
-                      Restore
-                    </button>
+                      <span className="line-clamp-3 font-medium">{p.title || untitled("board")}</span>
+                      {p.id === currentId && <span className="text-xs text-stone-400">open now</span>}
+                    </Link>
+                    <div className="absolute right-2 top-2 hidden gap-1 group-hover:flex">
+                      <button
+                        onClick={() => remove(p)}
+                        className="rounded bg-white px-2 py-1 text-xs shadow-sm hover:bg-stone-100"
+                      >
+                        Remove
+                      </button>
+                      <button
+                        onClick={() => duplicate(p)}
+                        className="rounded bg-white px-2 py-1 text-xs shadow-sm hover:bg-stone-100"
+                      >
+                        Duplicate
+                      </button>
+                    </div>
                   </div>
                 ))}
-            </div>
-          )}
+              </div>
+            );
+          })()}
         </div>
 
-        <div className="flex gap-2 border-t border-stone-200 p-4">
+        {trash.length > 0 && (
+          <div className="max-h-48 overflow-y-auto border-t border-stone-200 px-3 py-2">
+            <button
+              onClick={() => setShowTrash((t) => !t)}
+              className="px-2 py-1 text-sm text-stone-500 hover:text-stone-900"
+            >
+              Trash ({trash.length}) {showTrash ? "▾" : "▸"}
+            </button>
+            {showTrash &&
+              trash.map((p) => (
+                <div key={p.id} data-trashed={p.id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                  <span className="min-w-0 flex-1 truncate text-stone-500">{p.title || untitled("board")}</span>
+                  <span className="shrink-0 text-xs text-stone-400">{daysLeft(p)} days left</span>
+                  <button onClick={() => restore(p)} className="shrink-0 rounded px-2 py-1 text-xs hover:bg-stone-100">
+                    Restore
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
+
+        <div className="border-t border-stone-200 p-4">
           <form action={createPage.bind(null, "board", null)}>
             <button className="rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white">New board</button>
-          </form>
-          <form action={createPage.bind(null, "note", null)}>
-            <button className="rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium">New note</button>
           </form>
         </div>
       </aside>

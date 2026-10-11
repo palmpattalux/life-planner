@@ -2,7 +2,7 @@
 
 A huge white board, like Miro, with faint grey dots and a light grey line at its edge. Log in from any device.
 
-Opening the app goes straight to the project you opened last, with an **Open?** box on the right listing all your projects so you can switch with one click (click anywhere else or the x to close it; **Projects** at the top left opens it again). Hovering a project shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. The box also has **New board** and **New note**. Boards and notes save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left. A note has a title, a space to write, and **+ Add page** to make pages inside it.
+The app is for boards (notes are an extra). Opening it goes straight to the board you opened last, with an **Open?** box on the right listing all your boards as big boxes that share out its space (the more boards, the smaller each box) so you can switch with one click. Click anywhere else or the x to close it; **Projects** at the top left opens it again. Hovering a board shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. The box also has **New board**. Boards save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left. Notes (a title, a space to write, and **+ Add page** for pages inside it) still exist but have no way in yet.
 
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
@@ -80,8 +80,8 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 
 | Path | What it does |
 | --- | --- |
-| `src/app/page.tsx` | Opens the most recent project (or offers to start one) |
-| `src/app/OpenPanel.tsx` | The Open? box: switch, remove (trash), duplicate, restore |
+| `src/app/page.tsx` | Opens the most recent board (or offers to start one) |
+| `src/app/OpenPanel.tsx` | The Open? box: board boxes to switch, remove (trash), duplicate, restore |
 | `src/app/board/[id]/` | A saved board (saves as you go, keeps presets) |
 | `src/app/note/[id]/` | A note and the pages inside it |
 | `src/app/actions.ts` | Making a new board, note or page |
