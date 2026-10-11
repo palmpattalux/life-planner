@@ -22,9 +22,10 @@ type View = { x: number; y: number; scale: number };
 // `group`: things grouped together share a group number and are selected
 // and moved as one.
 type Circle = { id: number; x: number; y: number; size: number; group?: number };
-// A square outline (made from a circle). Only its outline can be clicked.
-// `label` is the text at its outer top left, in the square's colour.
-type Square = { id: number; x: number; y: number; size: number; color: string; label?: string; group?: number };
+// A square outline (made from a circle); its corners can be dragged to make
+// it any rectangle. Only its outline can be clicked. `label` is the text at
+// its outer top left, in the square's colour. x, y is the centre.
+type Square = { id: number; x: number; y: number; w: number; h: number; color: string; label?: string; group?: number };
 type Text = {
   id: number;
   x: number; // centre
@@ -60,7 +61,7 @@ type Kind = "circle" | "square" | "text" | "line";
 // Selected things, as "circle:3", "text:7", "line:2".
 type Key = `${Kind}:${number}`;
 // "selection": pressing inside the selection box, on empty board.
-type DragKind = Kind | End | "bend" | "selection";
+type DragKind = Kind | End | "bend" | "corner" | "selection";
 
 const CIRCLE_SIZE = 64;
 const MIN_CIRCLE = 8;
@@ -184,7 +185,7 @@ export function Board() {
   const drag = useRef<{
     kind: DragKind;
     id: number;
-    bendIndex?: number;
+    index?: number; // which bend or square corner
     start: Point; // board position where the drag began
     orig: BoardData;
     many: Key[] | null; // set when dragging several things together
@@ -261,7 +262,7 @@ export function Board() {
     }
     if (kind === "square") {
       const q = data.squares.find((q) => q.id === id);
-      return q ? { minX: q.x - q.size / 2, minY: q.y - q.size / 2, maxX: q.x + q.size / 2, maxY: q.y + q.size / 2 } : null;
+      return q ? { minX: q.x - q.w / 2, minY: q.y - q.h / 2, maxX: q.x + q.w / 2, maxY: q.y + q.h / 2 } : null;
     }
     if (kind === "text") {
       const el = document.querySelector(`[data-text="${id}"]`);
@@ -441,13 +442,17 @@ export function Board() {
     let f = k;
     const sIds = idsOf(sel, "square");
     for (const c of data.circles) if (cIds.has(c.id)) f = clamp(c.size * f, MIN_CIRCLE, MAX_CIRCLE) / c.size;
-    for (const q of data.squares) if (sIds.has(q.id)) f = clamp(q.size * f, MIN_CIRCLE, MAX_CIRCLE) / q.size;
+    for (const q of data.squares) {
+      if (!sIds.has(q.id)) continue;
+      f = Math.max(f, MIN_CIRCLE / Math.min(q.w, q.h));
+      f = Math.min(f, MAX_CIRCLE / Math.max(q.w, q.h));
+    }
     for (const t of data.texts) if (tIds.has(t.id)) f = clamp(t.fontSize * f, MIN_TEXT, MAX_TEXT) / t.fontSize;
     const scalePt = (p: Point) => (single ? p : { x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f });
 
     setBoard((b) => ({
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, ...scalePt(c), size: c.size * f } : c)),
-      squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, ...scalePt(q), size: q.size * f } : q)),
+      squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, ...scalePt(q), w: q.w * f, h: q.h * f } : q)),
       texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, ...scalePt(t), fontSize: t.fontSize * f } : t)),
       lines: b.lines.map((l) =>
         lIds.has(l.id)
@@ -707,6 +712,23 @@ export function Board() {
       return;
     }
 
+    if (d.kind === "corner") {
+      // The opposite corner stays put; the square stretches to the cursor.
+      const q = o.squares.find((q) => q.id === d.id)!;
+      const sx = d.index === 1 || d.index === 2 ? 1 : -1; // corners: 0 top left, 1 top right, 2 bottom right, 3 bottom left
+      const sy = d.index === 2 || d.index === 3 ? 1 : -1;
+      const fixed = { x: q.x - (sx * q.w) / 2, y: q.y - (sy * q.h) / 2 };
+      const cx = q.x + (sx * q.w) / 2 + dx;
+      const cy = q.y + (sy * q.h) / 2 + dy;
+      const w = Math.max(MIN_CIRCLE, sx * (cx - fixed.x));
+      const h = Math.max(MIN_CIRCLE, sy * (cy - fixed.y));
+      setSquares(() =>
+        o.squares.map((s) =>
+          s.id === d.id ? { ...s, w, h, x: fixed.x + (sx * w) / 2, y: fixed.y + (sy * h) / 2 } : s,
+        ),
+      );
+      return;
+    }
     if (d.kind === "selection") return;
     const line = resolve(o.lines.find((l) => l.id === d.id)!, o);
     let next: Line;
@@ -721,7 +743,7 @@ export function Board() {
         bends: line.bends?.map(move),
       };
     } else if (d.kind === "bend") {
-      next = { ...line, bends: line.bends!.map((p, i) => (i === d.bendIndex ? move(p) : p)) };
+      next = { ...line, bends: line.bends!.map((p, i) => (i === d.index ? move(p) : p)) };
       // Keep attached ends attached.
       next = { ...next, from: o.lines.find((l) => l.id === d.id)!.from, to: o.lines.find((l) => l.id === d.id)!.to };
     } else {
@@ -754,7 +776,7 @@ export function Board() {
     setLines(() => o.lines.map((l) => (l.id === d.id ? next : l)));
   }
 
-  function startDrag(e: React.PointerEvent, kind: DragKind, id: number, bendIndex?: number) {
+  function startDrag(e: React.PointerEvent, kind: DragKind, id: number, index?: number) {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     const sel = selectionRef.current;
@@ -766,7 +788,7 @@ export function Board() {
     drag.current = {
       kind,
       id,
-      bendIndex,
+      index,
       start: toBoard(e.clientX, e.clientY),
       orig: boardRef.current,
       many,
@@ -854,7 +876,7 @@ export function Board() {
     setBoard((b) => ({
       ...b,
       circles: b.circles.filter((x) => x.id !== c.id),
-      squares: [...b.squares, { id: c.id, x: c.x, y: c.y, size: c.size, color: TEXT_COLORS[0], group: c.group }],
+      squares: [...b.squares, { id: c.id, x: c.x, y: c.y, w: c.size, h: c.size, color: TEXT_COLORS[0], group: c.group }],
     }));
     setSelection([keyOf("square", c.id)]);
   }
@@ -1115,23 +1137,23 @@ export function Board() {
 
         {squares.map((q) => {
           const inGroup = selection.length > 1 && selection.includes(keyOf("square", q.id));
-          const labelStyle = { fontSize: squareLabelSize(q.size), color: q.color, lineHeight: 1.2 };
+          const labelStyle = { fontSize: squareLabelSize(Math.min(q.w, q.h)), color: q.color, lineHeight: 1.2 };
           return (
             <div
               key={q.id}
               className="pointer-events-none absolute"
-              style={{ left: q.x - q.size / 2, top: q.y - q.size / 2, width: q.size, height: q.size }}
+              style={{ left: q.x - q.w / 2, top: q.y - q.h / 2, width: q.w, height: q.h }}
             >
-              <svg className="absolute inset-0 overflow-visible" width={q.size} height={q.size}>
+              <svg className="absolute inset-0 overflow-visible" width={q.w} height={q.h}>
                 {inGroup && (
-                  <rect width={q.size} height={q.size} fill="none" stroke={SELECT_BLUE} strokeOpacity={0.35} strokeWidth={px(6)} />
+                  <rect width={q.w} height={q.h} fill="none" stroke={SELECT_BLUE} strokeOpacity={0.35} strokeWidth={px(6)} />
                 )}
-                <rect x={1} y={1} width={q.size - 2} height={q.size - 2} fill="none" stroke={q.color} strokeWidth={2} />
+                <rect x={1} y={1} width={q.w - 2} height={q.h - 2} fill="none" stroke={q.color} strokeWidth={2} />
                 {/* Only the outline can be grabbed, not the space inside. */}
                 <rect
                   data-square={q.id}
-                  width={q.size}
-                  height={q.size}
+                  width={q.w}
+                  height={q.h}
                   fill="none"
                   stroke="transparent"
                   strokeWidth={px(12)}
@@ -1141,7 +1163,7 @@ export function Board() {
                 />
               </svg>
               {/* The label sits on the outside of the top left corner. */}
-              <div className="absolute bottom-full left-0" style={{ marginBottom: q.size * 0.04 }}>
+              <div className="absolute bottom-full left-0" style={{ marginBottom: Math.min(q.w, q.h) * 0.04 }}>
                 {editingLabel === q.id ? (
                   <div className="pointer-events-auto">
                     <TextEditor
@@ -1410,12 +1432,34 @@ export function Board() {
           </div>
         )}
 
+        {menuSquare &&
+          [
+            [-1, -1],
+            [1, -1],
+            [1, 1],
+            [-1, 1],
+          ].map(([sx, sy], i) => (
+            <div
+              key={i}
+              data-square-corner={i}
+              onPointerDown={(e) => startDrag(e, "corner", menuSquare.id, i)}
+              className={`absolute border border-stone-900 bg-white ${sx === sy ? "cursor-nwse-resize" : "cursor-nesw-resize"}`}
+              style={{
+                width: px(10),
+                height: px(10),
+                borderWidth: px(1.5),
+                left: menuSquare.x + (sx * menuSquare.w) / 2 - px(5),
+                top: menuSquare.y + (sy * menuSquare.h) / 2 - px(5),
+              }}
+            />
+          ))}
+
         {menuSquare && (
           <div
             data-menu="square"
             onPointerDown={(e) => e.stopPropagation()}
             className="absolute flex min-w-40 flex-col gap-1 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-            style={{ left: menuSquare.x + menuSquare.size / 2 + 8, top: menuSquare.y - menuSquare.size / 2 }}
+            style={{ left: menuSquare.x + menuSquare.w / 2 + 8 + px(8), top: menuSquare.y - menuSquare.h / 2 }}
           >
             <div className="flex gap-1.5 px-1 py-1">
               {TEXT_COLORS.map((color) => (
