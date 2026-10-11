@@ -682,7 +682,10 @@ export function Board() {
       if (key === "b") {
         const at = cursorOnBoard();
         commit();
-        setCircles((cs) => [...cs, { id: nextId.current++, x: at.x, y: at.y, size: CIRCLE_SIZE }]);
+        const id = nextId.current++;
+        setCircles((cs) => [...cs, { id, x: at.x, y: at.y, size: CIRCLE_SIZE }]);
+        // Select it straight away so its menu shows.
+        setSelection([keyOf("circle", id)]);
       } else if (key === "n" && !draftRef.current) {
         const at = cursorOnBoard();
         setDraft({ from: at, to: at });
