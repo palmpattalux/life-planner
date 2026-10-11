@@ -7,6 +7,7 @@ The app is for boards (notes are an extra). Opening it goes straight to the boar
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
 - Press **b** to add a circle at the cursor. It is selected straight away with its menu open.
+- Press **t** to start typing text at the cursor straight away (the same text as the circle menu's Text, without making a circle first).
 - Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it. A line that starts or ends inside a circle or text is attached to it.
 - Lines snap exactly level or upright when they are within a few degrees of horizontal or vertical (while drawing, dragging an end or dragging a bend).
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.

@@ -85,7 +85,7 @@ type DragKind = Kind | End | "bend" | "corner" | "selection";
 
 // A huge white board with faint grey dots and a light grey edge.
 // - Two-finger swipe moves around; pinch or mouse wheel zooms.
-// - "b" adds a circle at the cursor. Hold "n" to draw a line; let go to confirm.
+// - "b" adds a circle at the cursor; "t" starts typing a text there. Hold "n" to draw a line; let go to confirm.
 // - Drag circles, texts and lines to move them.
 // - Drag on empty board to draw a selection box: everything it touches is
 //   selected and can be moved together (drag any of them) or resized together
@@ -702,6 +702,9 @@ export function Board({
       const key = e.key.toLowerCase();
       if (key === "v") {
         setMenuOpen((open) => !open);
+      } else if (key === "t") {
+        e.preventDefault();
+        addText(cursorOnBoard());
       } else if (key === "b") {
         const at = cursorOnBoard();
         commit();
@@ -1013,7 +1016,23 @@ export function Board({
     }));
     setSelection([]);
     editingIsNew.current = true;
+    editingAppend.current = "";
     setEditing(c.id);
+  }
+
+  // "t": a new empty text at this spot, ready to type (like the circle menu's
+  // Text, without the circle).
+  function addText(at: Point) {
+    const id = nextId.current++;
+    commit();
+    setTexts((ts) => [
+      ...ts,
+      { id, x: at.x, y: at.y, text: "", fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false },
+    ]);
+    setSelection([]);
+    editingIsNew.current = true;
+    editingAppend.current = "";
+    setEditing(id);
   }
 
   // The circle menu's square icon: swap the circle for a square outline in the
