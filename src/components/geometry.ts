@@ -32,11 +32,22 @@ export function pointAlong(points: Point[], d: number): { p: Point; dir: Point }
   return { p: points[0], dir: { x: 1, y: 0 } };
 }
 
-// Index (in `points`) to insert a new bend at: the middle of the longest segment.
-export function newBend(points: Point[]): { index: number; at: Point } {
+// Distance from p to the straight piece a-b.
+export function distToSegment(p: Point, a: Point, b: Point) {
+  const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+  const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len2)) : 0;
+  return dist(p, { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+}
+
+// Index (in `points`) to insert a new bend at: the middle of the straight
+// piece nearest `near` (where the line was clicked), or else of the longest.
+export function newBend(points: Point[], near?: Point): { index: number; at: Point } {
   let best = 1;
   for (let i = 2; i < points.length; i++) {
-    if (dist(points[i - 1], points[i]) > dist(points[best - 1], points[best])) best = i;
+    const better = near
+      ? distToSegment(near, points[i - 1], points[i]) < distToSegment(near, points[best - 1], points[best])
+      : dist(points[i - 1], points[i]) > dist(points[best - 1], points[best]);
+    if (better) best = i;
   }
   const a = points[best - 1];
   const b = points[best];

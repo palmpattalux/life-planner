@@ -215,6 +215,8 @@ export function Board() {
     moved: boolean;
   } | null>(null);
   const nextId = useRef(1);
+  // Where a line was last pressed, so "Angle" adds its bend on that side.
+  const linePressedAt = useRef<{ id: number; at: Point } | null>(null);
   // What Ctrl+C copied, ready for Ctrl+V.
   const clipboard = useRef<BoardData | null>(null);
   // Groups of things saved with the Preset button, to be added later on.
@@ -1035,11 +1037,12 @@ export function Board() {
     setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   }
 
-  // The line menu's "Angle": add a bend point in the middle of the longest
-  // straight part of the line.
+  // The line menu's "Angle": add a bend point in the middle of the straight
+  // part of the line that was clicked (between the nearest bend and that tip).
   function addBend(l: Line) {
     const pts = pointsOf(resolve(l));
-    const { index, at } = newBend(pts);
+    const pressed = linePressedAt.current?.id === l.id ? linePressedAt.current.at : undefined;
+    const { index, at } = newBend(pts, pressed);
     const bends = [...(l.bends ?? [])];
     bends.splice(index - 1, 0, at);
     updateLine(l.id, { bends });
@@ -1205,7 +1208,10 @@ export function Board() {
                   strokeWidth={px(14)}
                   className="cursor-grab active:cursor-grabbing"
                   style={{ pointerEvents: "stroke" }}
-                  onPointerDown={(e) => startDrag(e, "line", l.id)}
+                  onPointerDown={(e) => {
+                    linePressedAt.current = { id: l.id, at: toBoard(e.clientX, e.clientY) };
+                    startDrag(e, "line", l.id);
+                  }}
                 />
               </g>
             );

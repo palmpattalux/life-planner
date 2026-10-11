@@ -13,7 +13,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
   - **Month**: pick the beginning month (Jan–Dec), then the end month. It can wrap round the year, e.g. Nov → Feb.
 - Click a line to show an arrow button beside each end. Click one to give that end an arrowhead; click again to remove it.
 - Click a line and choose **Text** to type text in the middle of the line. Double-click that text to edit it.
-- Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends.
+- Click a line and choose **Angle** to add a bend point (a small diamond). Drag it to bend the line. Choose Angle again for more bends: the new one goes in the middle of the part of the line you clicked on (between the nearest bend and that tip).
 - Click anything and press **Backspace** to delete it.
 - **Ctrl+Z** (or Cmd+Z) undoes any change: adding, moving, resizing, recolouring, arrows, bends, deleting. **Ctrl+Shift+Z** (or Cmd+Shift+Z) redoes it.
 - Drag on an empty part of the board to draw a selection box. Everything it touches is selected: drag any of them, or anywhere inside the dashed box, to move them all. Pinch (or mouse wheel) with the cursor inside the box resizes them all; a two-finger swipe, or anything outside the box, moves around the board as usual.
