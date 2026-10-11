@@ -110,6 +110,18 @@ function isTrackpadSwipe(e: WheelEvent) {
 
 // Square labels grow and shrink with their square.
 const squareLabelSize = (size: number) => Math.max(8, size / 4);
+// A point nearly level or upright with `anchor` (within a few degrees) is put
+// exactly level or upright with it, so lines snap straight.
+const STRAIGHT_SNAP_DEG = 3;
+function straighten(p: Point, anchor: Point): Point {
+  const dx = Math.abs(p.x - anchor.x);
+  const dy = Math.abs(p.y - anchor.y);
+  const limit = Math.tan((STRAIGHT_SNAP_DEG * Math.PI) / 180);
+  if (dx > 0 && dy / dx < limit) return { x: p.x, y: anchor.y };
+  if (dy > 0 && dx / dy < limit) return { x: anchor.x, y: p.y };
+  return p;
+}
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const keyOf = (kind: Kind, id: number): Key => `${kind}:${id}`;
 // Every thing on the board, as keys.
@@ -729,7 +741,7 @@ export function Board() {
     pointer.current = { x: e.clientX, y: e.clientY };
     if (draftRef.current) {
       const to = toBoard(e.clientX, e.clientY);
-      setDraft((dr) => (dr ? { ...dr, to } : dr));
+      setDraft((dr) => (dr ? { ...dr, to: straighten(to, dr.from) } : dr));
     }
     if (marquee) {
       setMarquee({ ...marquee, x2: e.clientX, y2: e.clientY });
@@ -804,12 +816,18 @@ export function Board() {
         bends: line.bends?.map(move),
       };
     } else if (d.kind === "bend") {
-      next = { ...line, bends: line.bends!.map((p, i) => (i === d.index ? move(p) : p)) };
+      // Straighten against whichever neighbour it is nearly level or upright with.
+      const pts = pointsOf(line);
+      const i = d.index! + 1;
+      const at = straighten(straighten(move(pts[i]), pts[i - 1]), pts[i + 1]);
+      next = { ...line, bends: line.bends!.map((p, j) => (j === d.index ? at : p)) };
       // Keep attached ends attached.
       next = { ...next, from: o.lines.find((l) => l.id === d.id)!.from, to: o.lines.find((l) => l.id === d.id)!.to };
     } else {
       const end = d.kind;
-      const pos = move(line[end]);
+      const pts = pointsOf(line);
+      const neighbour = end === "from" ? pts[1] : pts[pts.length - 2];
+      const pos = straighten(move(line[end]), neighbour);
       const scale = viewRef.current.scale;
       // Nearest circle or text within reach (distance from its edge).
       const reach = ATTACH_DISTANCE / scale;
@@ -1420,6 +1438,28 @@ export function Board() {
             const pts = pointsOf(l);
             return (
               <>
+                {/* The menu goes underneath the handles so it never hides an end. */}
+                <div
+                  className="absolute"
+                  style={(() => {
+                    const mid = pointAlong(pts, polylineLength(pts) / 2).p;
+                    return { left: mid.x + 12, top: mid.y + 12 };
+                  })()}
+                >
+                  <LineMenu
+                    key={l.id}
+                    time={l.time}
+                    onDone={(time) => {
+                      updateLine(l.id, { time });
+                      setSelection([]);
+                    }}
+                    onAngle={() => addBend(selectedLine)}
+                    onText={() => {
+                      setSelection([]);
+                      setEditingLineLabel(l.id);
+                    }}
+                  />
+                </div>
                 <svg
                   className="pointer-events-none absolute left-0 top-0 overflow-visible"
                   width={BOARD_W}
@@ -1496,27 +1536,6 @@ export function Board() {
                   );
                 })}
 
-                <div
-                  className="absolute"
-                  style={(() => {
-                    const mid = pointAlong(pts, polylineLength(pts) / 2).p;
-                    return { left: mid.x + 12, top: mid.y + 12 };
-                  })()}
-                >
-                  <LineMenu
-                    key={l.id}
-                    time={l.time}
-                    onDone={(time) => {
-                      updateLine(l.id, { time });
-                      setSelection([]);
-                    }}
-                    onAngle={() => addBend(selectedLine)}
-                    onText={() => {
-                      setSelection([]);
-                      setEditingLineLabel(l.id);
-                    }}
-                  />
-                </div>
               </>
             );
           })()}

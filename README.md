@@ -6,6 +6,7 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
 - Press **b** to add a circle at the cursor. It is selected straight away with its menu open.
 - Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it. A line that starts or ends inside a circle or text is attached to it.
+- Lines snap exactly level or upright when they are within a few degrees of horizontal or vertical (while drawing, dragging an end or dragging a bend).
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.
 - Click a line and choose **Time**, then Day, Week, Month or Year. The line becomes a timeline, like a ruler.
   - **Day** (0–31), **Week** (1–4) and **Year**: two slots, Beginning → End. Type a number or scroll over a slot to count up or down. Enter moves from Beginning to End, and Enter again finishes.
