@@ -126,12 +126,8 @@ export function scaleSelection(el: HTMLElement, factor: number) {
 
   // Split the text at the ends of the highlight so only the highlighted
   // characters change.
-  let {
-    startContainer: start,
-    startOffset,
-    endContainer: end,
-    endOffset,
-  } = range;
+  let { startContainer: start, startOffset, endContainer: end } = range;
+  const { endOffset } = range;
   if (
     end.nodeType === Node.TEXT_NODE &&
     endOffset < (end.textContent ?? "").length
