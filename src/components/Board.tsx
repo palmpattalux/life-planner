@@ -17,7 +17,7 @@ import {
   type Box,
   type Point,
 } from "./geometry";
-import { LinkButton, SquareIcon } from "./icons";
+import { LinkButton, PinIcon, SquareIcon } from "./icons";
 import { LineMenu } from "./LineMenu";
 import { tickValue, timelineTicks, type Timeline } from "./timeline";
 
@@ -54,8 +54,12 @@ type Line = {
   toArrow?: boolean;
   time?: Timeline;
   label?: string; // text in the middle of the line
+  // Pinned timeline marks, by their value (as in `time`): drawn bigger
+  // (when bold) and in their own colour.
+  pins?: Pin[];
   group?: number;
 };
+type Pin = { value: string; bold: boolean; color: string };
 type End = "from" | "to";
 // Everything on the board. Kept as one object so every change can be undone
 // (and, later, saved) in one piece.
@@ -83,6 +87,8 @@ const SNAP_PINK = "#ec4899";
 const PHASE_ORANGE = "#f97316";
 // How far a new phase sits from the timeline it was made from, in board units.
 const PHASE_GAP = 48;
+// How much bigger a bold pinned timeline mark is drawn.
+const PIN_GROW = 1.5;
 // Moving less than this many pixels between press and release counts as a click.
 const CLICK_SLOP = 4;
 // Scroll steps closer together than this are one resize, undone in one go.
@@ -175,7 +181,15 @@ export function Board() {
   const [editing, setEditing] = useState<number | null>(null);
   // Choosing a phase on a timeline: the first tick picked (null until the
   // first click) and the tick under the mouse.
-  const [phase, setPhase] = useState<{ lineId: number; start: number | null; hover: number } | null>(null);
+  // `pin`: choosing one mark to pin instead of a stretch.
+  const [phase, setPhase] = useState<{
+    lineId: number;
+    start: number | null;
+    hover: number;
+    pin?: boolean;
+  } | null>(null);
+  // The pinned mark whose box (bold, colours) is showing.
+  const [pinMenu, setPinMenu] = useState<{ lineId: number; value: string } | null>(null);
   // Alignment lines shown while a square snaps to other squares.
   const [snapGuides, setSnapGuides] = useState<{ a: Point; b: Point }[]>([]);
   // Which line's middle text is being typed.
@@ -945,6 +959,7 @@ export function Board() {
 
   function startDrag(e: React.PointerEvent, kind: DragKind, id: number, index?: number) {
     e.stopPropagation();
+    setPinMenu(null);
     e.currentTarget.setPointerCapture(e.pointerId);
     const sel = selectionRef.current;
     const itemKind: Kind | null =
@@ -969,6 +984,7 @@ export function Board() {
   // around several selected things, drags them).
   function onBoardPointerDown(e: React.PointerEvent) {
     e.currentTarget.setPointerCapture(e.pointerId);
+    setPinMenu(null);
     // Inside the box around several selected things: drag them all.
     const at = toBoard(e.clientX, e.clientY);
     const pad = 6 / viewRef.current.scale;
@@ -1151,11 +1167,33 @@ export function Board() {
     setSelection([keyOf("line", id)]);
   }
 
+  // Pin the mark under the mouse: it becomes bigger and bold, and its box
+  // (bold, colours) opens.
+  function confirmPin(index: number) {
+    const l = lines.find((x) => x.id === phase?.lineId);
+    setPhase(null);
+    if (!l?.time) return;
+    const value = tickValue(l.time, index);
+    if (!l.pins?.some((p) => p.value === value)) {
+      updateLine(l.id, { pins: [...(l.pins ?? []), { value, bold: true, color: INK }] });
+    }
+    setPinMenu({ lineId: l.id, value });
+  }
+
+  function updatePin(lineId: number, value: string, patch: Partial<Pin>) {
+    const l = lines.find((x) => x.id === lineId);
+    if (!l) return;
+    updateLine(lineId, { pins: l.pins?.map((p) => (p.value === value ? { ...p, ...patch } : p)) });
+  }
+
   // Enter confirms the phase; Escape stops choosing one.
   useEffect(() => {
     if (!phase) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Enter") confirmPhase();
+      if (e.key === "Enter") {
+        if (phase?.pin) confirmPin(phase.hover);
+        else confirmPhase();
+      }
       if (e.key === "Escape") setPhase(null);
     }
     window.addEventListener("keydown", onKey);
@@ -1175,7 +1213,8 @@ export function Board() {
     const tickEvery = Math.max(1, Math.ceil(3 / spacing));
     return labels.map((text, i) => {
       const isEnd = i === 0 || i === n - 1;
-      if (!isEnd && i % tickEvery !== 0) return null;
+      const pin = l.pins?.find((p) => p.value === tickValue(l.time!, i));
+      if (!pin && !isEnd && i % tickEvery !== 0) return null;
       const { p, dir } = pointAlong(pts, n > 1 ? (len * i) / (n - 1) : 0);
       // Perpendicular to the line, pointing down-ish so labels sit under it.
       let nx = -dir.y;
@@ -1184,24 +1223,43 @@ export function Board() {
         nx = -nx;
         ny = -ny;
       }
-      const labelled = isEnd || (i % labelEvery === 0 && n - 1 - i >= labelEvery / 2);
-      const size = labelled ? MAJOR_TICK : TICK;
+      const labelled = !!pin || isEnd || (i % labelEvery === 0 && n - 1 - i >= labelEvery / 2);
+      // A bold pin is drawn bigger.
+      const grow = pin?.bold ? PIN_GROW : 1;
+      const size = (labelled ? MAJOR_TICK : TICK) * grow;
+      const fontSize = TICK_LABEL_SIZE * grow;
       return (
-        <g key={i} data-tick={labelled ? text : undefined}>
+        <g
+          key={i}
+          data-tick={labelled ? text : undefined}
+          data-pin={pin ? text : undefined}
+          // Clicking a pin opens its box.
+          style={pin ? { pointerEvents: "auto", cursor: "pointer" } : undefined}
+          onPointerDown={
+            pin
+              ? (e) => {
+                  e.stopPropagation();
+                  setSelection([]);
+                  setPinMenu({ lineId: l.id, value: pin.value });
+                }
+              : undefined
+          }
+        >
           <line
             x1={p.x - nx * size}
             y1={p.y - ny * size}
             x2={p.x + nx * size}
             y2={p.y + ny * size}
-            stroke={INK}
-            strokeWidth={labelled ? 1.5 : 1}
+            stroke={pin?.color ?? INK}
+            strokeWidth={(labelled ? 1.5 : 1) * grow}
           />
           {labelled && (
             <text
-              x={p.x + nx * (MAJOR_TICK + TICK_LABEL_SIZE)}
-              y={p.y + ny * (MAJOR_TICK + TICK_LABEL_SIZE)}
-              fontSize={TICK_LABEL_SIZE}
-              fill="#57534e"
+              x={p.x + nx * (size + fontSize)}
+              y={p.y + ny * (size + fontSize)}
+              fontSize={fontSize}
+              fontWeight={pin?.bold ? 700 : 400}
+              fill={pin?.color ?? "#57534e"}
               textAnchor="middle"
               dominantBaseline="middle"
             >
@@ -1694,7 +1752,7 @@ export function Board() {
               <div
                 data-menu="phase"
                 onPointerDown={(e) => e.stopPropagation()}
-                className="absolute -translate-x-1/2 -translate-y-full rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+                className="absolute flex -translate-x-1/2 -translate-y-full flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
                 style={{ left: at.x, top: at.y - px(14) }}
               >
                 <button
@@ -1706,6 +1764,55 @@ export function Board() {
                 >
                   Phase
                 </button>
+                <button
+                  onClick={() => {
+                    setSelection([]);
+                    setPhase({ lineId: selectedLine.id, start: null, hover: 0, pin: true });
+                  }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100"
+                >
+                  <PinIcon />
+                  Pin
+                </button>
+              </div>
+            );
+          })()}
+
+        {pinMenu &&
+          (() => {
+            const l = lines.find((x) => x.id === pinMenu.lineId);
+            const pin = l?.pins?.find((p) => p.value === pinMenu.value);
+            if (!l?.time || !pin) return null;
+            const { pts, labels, spacing } = timelineGeometry(l);
+            const i = labels.findIndex((_, j) => tickValue(l.time!, j) === pin.value);
+            if (i < 0) return null;
+            const at = pointAlong(pts, i * spacing).p;
+            return (
+              <div
+                data-menu="pin"
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute flex -translate-x-1/2 items-center gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
+                style={{ left: at.x, top: at.y + MAJOR_TICK * PIN_GROW + TICK_LABEL_SIZE * PIN_GROW * 2 + px(8) }}
+              >
+                <button
+                  aria-label="Bold"
+                  aria-pressed={pin.bold}
+                  onClick={() => updatePin(l.id, pin.value, { bold: !pin.bold })}
+                  className={`size-6 rounded text-sm font-bold ${pin.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                >
+                  B
+                </button>
+                <div className="flex gap-1.5">
+                  {TEXT_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      aria-label={`Colour ${color}`}
+                      onClick={() => updatePin(l.id, pin.value, { color })}
+                      className={`size-5 rounded-full ${pin.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                      style={{ background: color }}
+                    />
+                  ))}
+                </div>
               </div>
             );
           })()}
@@ -1840,7 +1947,8 @@ export function Board() {
           onPointerDown={(e) => {
             e.stopPropagation();
             const hover = phaseTickAt(e.clientX, e.clientY);
-            if (phase.start === null) setPhase({ ...phase, start: hover, hover });
+            if (phase.pin) confirmPin(hover);
+            else if (phase.start === null) setPhase({ ...phase, start: hover, hover });
             else confirmPhase();
           }}
         />
