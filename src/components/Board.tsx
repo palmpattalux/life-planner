@@ -19,6 +19,7 @@ import {
 } from "./geometry";
 import { CheckMark, ChecklistIcon, LinkButton, PinIcon, SquareIcon } from "./icons";
 import { LineMenu } from "./LineMenu";
+import { SIDE_MENU_W, SideMenu } from "./SideMenu";
 import {
   domToRuns,
   isPlain,
@@ -77,7 +78,16 @@ type Pin = { value: string; bold: boolean; color: string };
 type End = "from" | "to";
 // Everything on the board. Kept as one object so every change can be undone
 // (and, later, saved) in one piece.
-type BoardData = { circles: Circle[]; squares: Square[]; texts: Text[]; lines: Line[] };
+export type BoardData = { circles: Circle[]; squares: Square[]; texts: Text[]; lines: Line[] };
+export const EMPTY_BOARD: BoardData = { circles: [], squares: [], texts: [], lines: [] };
+// A saved group of things that can be placed on any board again.
+export type Preset = { id: string; name: string; data: BoardData };
+
+// The biggest id or group number used on a board, so new ones don't clash.
+function maxId(data: BoardData) {
+  const items = [...data.circles, ...data.squares, ...data.texts, ...data.lines];
+  return Math.max(0, ...items.flatMap((i) => [i.id, i.group ?? 0]));
+}
 type Kind = "circle" | "square" | "text" | "line";
 // Selected things, as "circle:3", "text:7", "line:2".
 type Key = `${Kind}:${number}`;
@@ -189,8 +199,25 @@ const idsOf = (sel: Key[], kind: Kind) =>
 //   Drop an end near a circle or text and it attaches, following it when it moves.
 // - Backspace deletes whatever is selected; Ctrl+Z / Cmd+Z undoes any change,
 //   Ctrl+Shift+Z / Cmd+Shift+Z redoes it.
-export function Board() {
-  const [board, setBoard] = useState<BoardData>({ circles: [], squares: [], texts: [], lines: [] });
+// - "v" opens the menu on the right, which holds the saved presets.
+// The board starts from `initial` and reports every change to `onChange`, so
+// the page around it can save it. Presets are kept by the page too.
+export function Board({
+  initial = EMPTY_BOARD,
+  onChange,
+  presets = [],
+  onSavePreset,
+  onUpdatePreset,
+  onDeletePreset,
+}: {
+  initial?: BoardData;
+  onChange?: (data: BoardData) => void;
+  presets?: Preset[];
+  onSavePreset?: (data: BoardData) => void;
+  onUpdatePreset?: (id: string, data: BoardData) => void;
+  onDeletePreset?: (id: string) => void;
+}) {
+  const [board, setBoard] = useState<BoardData>(initial);
   const { circles, squares, texts, lines } = board;
   const setCircles = (f: (cs: Circle[]) => Circle[]) => setBoard((b) => ({ ...b, circles: f(b.circles) }));
   const setSquares = (f: (qs: Square[]) => Square[]) => setBoard((b) => ({ ...b, squares: f(b.squares) }));
@@ -264,14 +291,24 @@ export function Board() {
     startY: number;
     moved: boolean;
   } | null>(null);
-  const nextId = useRef(1);
+  const nextId = useRef(maxId(initial) + 1);
   // Where a line was last pressed, so "Angle" adds its bend on that side.
   const linePressedAt = useRef<{ id: number; at: Point } | null>(null);
   // What Ctrl+C copied, ready for Ctrl+V.
   const clipboard = useRef<BoardData | null>(null);
-  // Groups of things saved with the Preset button, to be added later on.
-  const presets = useRef<BoardData[]>([]);
   const [presetSaved, setPresetSaved] = useState(false);
+  // The right-hand menu opened with "v".
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The preset placed on the board with "Edit", until "Update preset" saves it.
+  const [editingPreset, setEditingPreset] = useState<string | null>(null);
+
+  // Tell the page about every change (not the first render: nothing changed).
+  const reported = useRef(board);
+  useEffect(() => {
+    if (board === reported.current) return;
+    reported.current = board;
+    onChange?.(board);
+  }, [board]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Remember the board as it is now, so the next change can be undone.
   function commit() {
@@ -527,10 +564,68 @@ export function Board() {
     }));
   }
 
+  // Add a copy of `items` centred on `at`, with new ids, and select it.
+  function paste(items: BoardData, at: Point) {
+    const pts = [
+      ...items.circles,
+      ...items.squares,
+      ...items.texts,
+      ...items.lines.flatMap((l) => pointsOf(l)),
+    ];
+    const box = boxAround(pts);
+    const dx = at.x - (box.minX + box.maxX) / 2;
+    const dy = at.y - (box.minY + box.maxY) / 2;
+    const move = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
+    const ids = new Map<number, number>();
+    const newId = (old: number) => {
+      if (!ids.has(old)) ids.set(old, nextId.current++);
+      return ids.get(old)!;
+    };
+    const groups = new Map<number, number>();
+    const newGroup = (g?: number) => {
+      if (g === undefined) return undefined;
+      if (!groups.has(g)) groups.set(g, nextId.current++);
+      return groups.get(g);
+    };
+    const copy = structuredClone(items);
+    const circles = copy.circles.map((c) => ({ ...c, ...move(c), id: newId(c.id), group: newGroup(c.group) }));
+    const squares = copy.squares.map((q) => ({ ...q, ...move(q), id: newId(q.id), group: newGroup(q.group) }));
+    const texts = copy.texts.map((t) => ({ ...t, ...move(t), id: newId(t.id), group: newGroup(t.group) }));
+    const lines = copy.lines.map((l) => ({
+      ...l,
+      id: nextId.current++,
+      from: move(l.from),
+      to: move(l.to),
+      bends: l.bends?.map(move),
+      fromItem: l.fromItem !== undefined ? newId(l.fromItem) : undefined,
+      toItem: l.toItem !== undefined ? newId(l.toItem) : undefined,
+      group: newGroup(l.group),
+    }));
+    commit();
+    setBoard((b) => ({
+      circles: [...b.circles, ...circles],
+      squares: [...b.squares, ...squares],
+      texts: [...b.texts, ...texts],
+      lines: [...b.lines, ...lines],
+    }));
+    setSelection(allKeys({ circles, squares, texts, lines }));
+    setEditing(null);
+    setEditingLabel(null);
+    setEditingLineLabel(null);
+  }
+
   function savePreset() {
-    presets.current.push(pickOut(selectionRef.current, boardRef.current));
+    const data = pickOut(selectionRef.current, boardRef.current);
+    if (editingPreset) onUpdatePreset?.(editingPreset, data);
+    else onSavePreset?.(data);
+    setEditingPreset(null);
     setPresetSaved(true);
     setTimeout(() => setPresetSaved(false), 1200);
+  }
+
+  // Place a copy of a preset in the middle of the screen, selected.
+  function placePreset(preset: Preset) {
+    paste(preset.data, toBoard(window.innerWidth / 2, window.innerHeight / 2));
   }
 
   // Start with the middle of the board in the middle of the screen.
@@ -549,6 +644,8 @@ export function Board() {
   useEffect(() => {
     const el = rootRef.current!;
     function onWheel(e: WheelEvent) {
+      // The side menu scrolls like a normal page.
+      if ((e.target as HTMLElement).closest("[data-side-menu]")) return;
       e.preventDefault();
 
       const sel = selectionRef.current;
@@ -679,56 +776,6 @@ export function Board() {
       return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
     };
 
-    // Add a copy of `items` centred on `at`, with new ids, and select it.
-    function paste(items: BoardData, at: Point) {
-      const pts = [
-        ...items.circles,
-        ...items.squares,
-        ...items.texts,
-        ...items.lines.flatMap((l) => pointsOf(l)),
-      ];
-      const box = boxAround(pts);
-      const dx = at.x - (box.minX + box.maxX) / 2;
-      const dy = at.y - (box.minY + box.maxY) / 2;
-      const move = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
-      const ids = new Map<number, number>();
-      const newId = (old: number) => {
-        if (!ids.has(old)) ids.set(old, nextId.current++);
-        return ids.get(old)!;
-      };
-      const groups = new Map<number, number>();
-      const newGroup = (g?: number) => {
-        if (g === undefined) return undefined;
-        if (!groups.has(g)) groups.set(g, nextId.current++);
-        return groups.get(g);
-      };
-      const copy = structuredClone(items);
-      const circles = copy.circles.map((c) => ({ ...c, ...move(c), id: newId(c.id), group: newGroup(c.group) }));
-      const squares = copy.squares.map((q) => ({ ...q, ...move(q), id: newId(q.id), group: newGroup(q.group) }));
-      const texts = copy.texts.map((t) => ({ ...t, ...move(t), id: newId(t.id), group: newGroup(t.group) }));
-      const lines = copy.lines.map((l) => ({
-        ...l,
-        id: nextId.current++,
-        from: move(l.from),
-        to: move(l.to),
-        bends: l.bends?.map(move),
-        fromItem: l.fromItem !== undefined ? newId(l.fromItem) : undefined,
-        toItem: l.toItem !== undefined ? newId(l.toItem) : undefined,
-        group: newGroup(l.group),
-      }));
-      commit();
-      setBoard((b) => ({
-        circles: [...b.circles, ...circles],
-        squares: [...b.squares, ...squares],
-        texts: [...b.texts, ...texts],
-        lines: [...b.lines, ...lines],
-      }));
-      setSelection(allKeys({ circles, squares, texts, lines }));
-      setEditing(null);
-      setEditingLabel(null);
-      setEditingLineLabel(null);
-    }
-
     function undo() {
       const prev = history.current.pop();
       if (!prev) return;
@@ -785,7 +832,9 @@ export function Board() {
       }
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
-      if (key === "b") {
+      if (key === "v") {
+        setMenuOpen((open) => !open);
+      } else if (key === "b") {
         const at = cursorOnBoard();
         commit();
         const id = nextId.current++;
@@ -2062,15 +2111,34 @@ export function Board() {
         )}
       </div>
 
-      {selection.length > 1 && (
+      {(selection.length > 1 || (editingPreset && selection.length > 0)) && (
         <button
           data-preset-button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={savePreset}
-          className="absolute right-4 top-4 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium shadow"
+          className="absolute top-4 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium shadow"
+          style={{ right: menuOpen ? SIDE_MENU_W + 16 : 16 }}
         >
-          {presetSaved ? "Preset saved" : "Preset"}
+          {presetSaved ? "Preset saved" : editingPreset ? "Update preset" : "Save preset"}
         </button>
+      )}
+
+      {menuOpen && (
+        <SideMenu
+          presets={presets}
+          onUse={(p) => {
+            setEditingPreset(null);
+            placePreset(p);
+          }}
+          onEdit={(p) => {
+            placePreset(p);
+            setEditingPreset(p.id);
+          }}
+          onDelete={(p) => {
+            if (editingPreset === p.id) setEditingPreset(null);
+            onDeletePreset?.(p.id);
+          }}
+        />
       )}
 
       {phase && (

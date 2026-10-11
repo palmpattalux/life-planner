@@ -1,43 +1,44 @@
 -- Life Planner database setup.
 -- Run this once in Supabase: Dashboard -> SQL Editor -> New query -> paste -> Run.
+-- Running it again is safe.
 
--- A phase is a chapter of your life, e.g. "2026-27: Build my career".
-create table if not exists public.phases (
+-- Pages: boards (the whiteboard) and notes. A note can hold pages of its own
+-- (parent_id points at the page it sits in; top-level pages show on Home).
+create table if not exists public.pages (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
-  title text not null,
-  focus text,
-  start_date date not null,
-  end_date date,
+  parent_id uuid references public.pages (id) on delete cascade,
+  kind text not null check (kind in ('board', 'note')),
+  title text not null default '',
+  content jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  constraint phase_dates check (end_date is null or end_date >= start_date)
+  updated_at timestamptz not null default now()
 );
 
--- Goals and events that belong to a phase.
-create table if not exists public.items (
+-- Presets: groups of board things saved to be placed on any board again.
+create table if not exists public.presets (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
-  phase_id uuid not null references public.phases (id) on delete cascade,
-  kind text not null check (kind in ('goal', 'event')),
-  title text not null,
-  notes text,
-  date date,
-  done boolean not null default false,
-  priority boolean not null default false,
+  name text not null,
+  content jsonb not null,
   created_at timestamptz not null default now()
 );
 
-create index if not exists phases_user_idx on public.phases (user_id, start_date);
-create index if not exists items_phase_idx on public.items (phase_id);
+create index if not exists pages_user_idx on public.pages (user_id, parent_id, updated_at desc);
+create index if not exists presets_user_idx on public.presets (user_id, created_at);
 
 -- Row Level Security: every person can only see and change their own rows.
-alter table public.phases enable row level security;
-alter table public.items enable row level security;
+alter table public.pages enable row level security;
+alter table public.presets enable row level security;
 
-drop policy if exists "own phases" on public.phases;
-create policy "own phases" on public.phases
+drop policy if exists "own pages" on public.pages;
+create policy "own pages" on public.pages
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-drop policy if exists "own items" on public.items;
-create policy "own items" on public.items
+drop policy if exists "own presets" on public.presets;
+create policy "own presets" on public.presets
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Old tables from the first version, no longer used.
+drop table if exists public.items;
+drop table if exists public.phases;

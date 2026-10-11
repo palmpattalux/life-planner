@@ -2,6 +2,8 @@
 
 A huge white board, like Miro, with faint grey dots and a light grey line at its edge. Log in from any device.
 
+**Home** lists everything you've saved. **New board** makes a white board and **New note** makes a note. Boards and notes save by themselves as you work (the top left says Saved). On a board, the top left has **Home** to go back and the board's name, which you can type over. A note has a title, a space to write, and **+ Add page** to make pages inside it.
+
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
 - Press **b** to add a circle at the cursor. It is selected straight away with its menu open.
@@ -21,7 +23,8 @@ A huge white board, like Miro, with faint grey dots and a light grey line at its
 - **Ctrl+Z** (or Cmd+Z) undoes any change: adding, moving, resizing, recolouring, arrows, bends, deleting. **Ctrl+Shift+Z** (or Cmd+Shift+Z) redoes it.
 - Drag on an empty part of the board to draw a selection box. Everything it touches is selected: drag any of them, or anywhere inside the dashed box, to move them all. Pinch (or mouse wheel) with the cursor inside the box resizes them all; a two-finger swipe, or anything outside the box, moves around the board as usual.
 - With several things selected, click **Group** beside the selection box. Grouped things are selected and moved together; click **Ungroup** to split them again.
-- With several things selected, the **Preset** button in the top right remembers them as a preset (adding presets back to the board comes later).
+- With several things selected, the **Save preset** button in the top right saves them as a preset (Preset 1, Preset 2, ...). Presets belong to you, so they can be used on any board.
+- Press **v** to open the menu on the right (press **v** again to close it). Its **Preset** button drops down every saved preset with **Use** (places a copy in the middle of the screen), **Edit** (places it, and the top right button becomes **Update preset**: select what the preset should be and press it to save over the old one) and **Delete**.
 - Click something (or select several) and press **Ctrl+C** (Cmd+C) to copy, then **Ctrl+V** (Cmd+V) to paste a copy at the cursor.
 - Drop a line end near a circle or text and it attaches: moving the circle or text moves that end. Drag the end away to detach it.
 - Drag a circle to move it anywhere.
@@ -77,7 +80,14 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 
 | Path | What it does |
 | --- | --- |
+| `src/app/page.tsx` | Home: every saved board and note |
+| `src/app/board/[id]/` | A saved board (saves as you go, keeps presets) |
+| `src/app/note/[id]/` | A note and the pages inside it |
+| `src/app/actions.ts` | Making a new board, note or page |
+| `src/lib/useAutosave.ts` | Saves a page a moment after each change |
 | `src/components/Board.tsx` | The white board |
+| `src/components/SideMenu.tsx` | The menu opened with v (presets) |
+| `src/components/richText.ts` | Text with parts in different sizes, bold and colours |
 | `src/components/LineMenu.tsx` | The box beside a clicked line (Time, Angle) |
 | `src/components/geometry.ts` | Maths for bent lines and selection boxes |
 | `src/components/timeline.ts` | Works out the dates along a timeline |
