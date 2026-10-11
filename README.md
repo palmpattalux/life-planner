@@ -2,7 +2,7 @@
 
 A huge white board, like Miro, with faint grey dots and a light grey line at its edge. Log in from any device.
 
-The app is for boards (notes are an extra). Opening it goes straight to the board you opened last, with an **Open?** box on the right listing all your boards as big boxes that share out its space (the more boards, the smaller each box) so you can switch with one click. Click anywhere else or the x to close it; **Projects** at the top left opens it again. Hovering a board shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. The box also has **New board**. Boards save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left. Notes (a title, a space to write, and **+ Add page** for pages inside it) still exist but have no way in yet.
+Opening the app goes straight to the board you opened last, with an **Open?** box on the right listing all your boards as big boxes that share out its space (the more boards, the smaller each box) so you can switch with one click. Click anywhere else or the x to close it; **Projects** at the top left opens it again. Hovering a board shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. The box also has **New board**. Boards save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left.
 
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
@@ -84,10 +84,9 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 | `src/app/page.tsx` | Opens the most recent board (or offers to start one) |
 | `src/app/OpenPanel.tsx` | The Open? box: board boxes to switch, remove (trash), duplicate, restore |
 | `src/app/board/[id]/` | A saved board (saves as you go, keeps presets) |
-| `src/app/note/[id]/` | A note and the pages inside it |
-| `src/app/actions.ts` | Making a new board, note or page |
+| `src/app/actions.ts` | Making a new board |
 | `src/app/login/` | Log in and create account |
-| `src/lib/pages.ts` | What a saved page looks like |
+| `src/lib/pages.ts` | Shared bits for saved boards (trash time, setup check) |
 | `src/lib/useAutosave.ts` | Saves a page a moment after each change, in order; never overwrites newer work saved from another tab |
 | `src/lib/supabase/` | Connecting to Supabase (server, browser, login check) |
 | `src/middleware.ts` | Keeps you logged in and protects every page |

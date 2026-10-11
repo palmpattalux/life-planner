@@ -1,19 +1,7 @@
-// A saved page: a board (the whiteboard) or a note. Notes can hold pages of
-// their own through parent_id. Stored in the "pages" table (supabase/schema.sql).
-export type PageKind = "board" | "note";
-
-export type PageRow = {
-  id: string;
-  parent_id: string | null;
-  kind: PageKind;
-  title: string;
-  content: unknown;
-  updated_at: string;
-};
-
-export type NoteContent = { body: string };
-
-export const untitled = (kind: PageKind) => (kind === "board" ? "Untitled board" : "Untitled note");
+// Boards are saved in the "pages" table (supabase/schema.sql), with kind
+// "board". (Its kind and parent_id columns are kept for notes, which are
+// being redone.)
+export const UNTITLED_BOARD = "Untitled board";
 
 // Page ids are uuids; anything else in the address can't be a page.
 export const isPageId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TRASH_DAYS, untitled } from "@/lib/pages";
+import { TRASH_DAYS, UNTITLED_BOARD } from "@/lib/pages";
 import { createClient } from "@/lib/supabase/client";
-import { createPage } from "./actions";
+import { createBoard } from "./actions";
 
 type Project = { id: string; title: string; deleted_at: string | null };
 
@@ -36,7 +36,7 @@ function tileLayout(n: number, w: number, h: number) {
 // share out its space (the more boards, the smaller each box), so it's one
 // click to switch away from the one that opened by itself. Hovering a board
 // shows Remove (to the trash for 30 days) and Duplicate. Clicking anywhere
-// else or the x closes it. Only boards show here; notes are an extra.
+// else or the x closes it.
 export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: () => void }) {
   const supabase = useMemo(createClient, []);
   const router = useRouter();
@@ -91,7 +91,7 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
     if (!data) return;
     await supabase
       .from("pages")
-      .insert({ kind: "board", title: `${p.title || untitled("board")} copy`, content: data.content });
+      .insert({ kind: "board", title: `${p.title || UNTITLED_BOARD} copy`, content: data.content });
     void load();
   }
 
@@ -135,7 +135,7 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
                       onClick={p.id === currentId ? onClose : undefined}
                       className="flex size-full flex-col items-center justify-center gap-1 overflow-hidden p-3 text-center"
                     >
-                      <span className="line-clamp-3 font-medium">{p.title || untitled("board")}</span>
+                      <span className="line-clamp-3 font-medium">{p.title || UNTITLED_BOARD}</span>
                       {p.id === currentId && <span className="text-xs text-stone-400">open now</span>}
                     </Link>
                     <div className="absolute right-2 top-2 hidden gap-1 group-hover:flex">
@@ -170,7 +170,7 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
             {showTrash &&
               trash.map((p) => (
                 <div key={p.id} data-trashed={p.id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
-                  <span className="min-w-0 flex-1 truncate text-stone-500">{p.title || untitled("board")}</span>
+                  <span className="min-w-0 flex-1 truncate text-stone-500">{p.title || UNTITLED_BOARD}</span>
                   <span className="shrink-0 text-xs text-stone-400">{daysLeft(p)} days left</span>
                   <button onClick={() => restore(p)} className="shrink-0 rounded px-2 py-1 text-xs hover:bg-stone-100">
                     Restore
@@ -181,7 +181,7 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
         )}
 
         <div className="border-t border-stone-200 p-4">
-          <form action={createPage.bind(null, "board", null)}>
+          <form action={createBoard}>
             <button className="rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white">New board</button>
           </form>
         </div>

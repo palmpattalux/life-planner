@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/supabase/server";
 import { tablesMissing } from "@/lib/pages";
-import { createPage } from "./actions";
+import { createBoard } from "./actions";
 import { SetupNeeded } from "./SetupNeeded";
 
 // Opening the app goes straight to the board opened last, with the "Open?"
 // box showing so switching to another one is a click away. With no boards
-// yet, it offers to start one. (The app is for boards; notes are an extra.)
+// yet, it offers to start one.
 export default async function Home() {
   const { supabase } = await requireUser();
   const { data, error } = await supabase
@@ -25,7 +25,7 @@ export default async function Home() {
     <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-6 px-6 text-center">
       <p className="text-stone-500">No boards yet.</p>
       <div className="flex gap-2">
-        <form action={createPage.bind(null, "board", null)}>
+        <form action={createBoard}>
           <button className="rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white">New board</button>
         </form>
       </div>
