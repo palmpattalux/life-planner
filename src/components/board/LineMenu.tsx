@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { INK, TEXT_COLORS } from "./constants";
 import { LinkButton } from "./icons";
 import { LIMITS, MONTHS, timelineTicks, type Timeline, type TimeUnit } from "./timeline";
 
@@ -18,17 +19,22 @@ const UNITS: { unit: TimeUnit; label: string }[] = [
 // finishes. Month shows the months to pick from, once for the beginning and
 // once for the end.
 // "Angle" adds a bend point to the line. "Text" types text in the middle of
-// the line. The chain icon is for links later on.
+// the line. A plain line (not a timeline) also has colours to pick from.
+// The chain icon is for links later on.
 export function LineMenu({
   time,
+  color,
   onDone,
   onAngle,
   onText,
+  onColor,
 }: {
   time?: Timeline;
+  color?: string;
   onDone: (time: Timeline) => void;
   onAngle: () => void;
   onText: () => void;
+  onColor: (color: string) => void;
 }) {
   const [step, setStep] = useState<"menu" | "unit" | "range" | "monthStart" | "monthEnd">("menu");
   const [unit, setUnit] = useState<TimeUnit>(time?.unit ?? "day");
@@ -76,6 +82,19 @@ export function LineMenu({
           <button className={item} onClick={onText}>
             Text
           </button>
+          {!time && (
+            <div className="flex gap-1.5 px-2 py-1.5">
+              {TEXT_COLORS.map((c) => (
+                <button
+                  key={c}
+                  aria-label={`Colour ${c}`}
+                  onClick={() => onColor(c)}
+                  className={`size-5 rounded-full ${(color ?? INK) === c ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          )}
           <LinkButton />
         </>
       )}

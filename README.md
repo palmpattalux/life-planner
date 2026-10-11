@@ -23,7 +23,8 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 - Click anything and press **Backspace** to delete it.
 - **Ctrl+Z** (or Cmd+Z) undoes any change: adding, moving, resizing, recolouring, arrows, bends, deleting. **Ctrl+Shift+Z** (or Cmd+Shift+Z) redoes it.
 - Drag on an empty part of the board to draw a selection box. Everything it touches is selected: drag any of them, or anywhere inside the dashed box, to move them all. Pinch (or mouse wheel) with the cursor inside the box resizes them all; a two-finger swipe, or anything outside the box, moves around the board as usual.
-- With several things selected, click **Group** beside the selection box. Grouped things are selected and moved together; click **Ungroup** to split them again.
+- With several things selected, click **Group** beside the selection box. Grouped things are selected and moved together; click **Ungroup** to split them again. Under that button is a row of colours: picking one gives every selected square, text and line that colour.
+- Clicking a plain line (not a timeline) shows colours in its menu.
 - With several things selected, the **Save preset** button in the top right saves them as a preset (Preset 1, Preset 2, ...). Presets belong to you, so they can be used on any board.
 - Press **v** to open the menu on the right (press **v** again to close it). Its **Preset** button drops down every saved preset with **Use** (places a copy in the middle of the screen), **Edit** (places it, and the top right button becomes **Update preset**: select what the preset should be and press it to save over the old one) and **Delete**.
 - Click something (or select several) and press **Ctrl+C** (Cmd+C) to copy, then **Ctrl+V** (Cmd+V) to paste a copy at the cursor.

@@ -1128,6 +1128,24 @@ export function Board({
     setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   }
 
+  // Give everything selected the same colour: squares, texts (all of their
+  // text, including parts that had their own colour) and lines.
+  function colorSelection(color: string) {
+    commit();
+    const sq = idsOf(selection, "square");
+    const tx = idsOf(selection, "text");
+    const ln = idsOf(selection, "line");
+    setSquares((qs) => qs.map((q) => (sq.has(q.id) ? { ...q, color } : q)));
+    setTexts((ts) =>
+      ts.map((t) => {
+        if (!tx.has(t.id)) return t;
+        const runs = t.runs?.map((r) => ({ ...r, color: undefined }));
+        return { ...t, color, runs: runs && !isPlain(runs) ? runs : undefined };
+      }),
+    );
+    setLines((ls) => ls.map((l) => (ln.has(l.id) ? { ...l, color } : l)));
+  }
+
   // The line menu's "Angle": add a bend point in the middle of the straight
   // part of the line that was clicked (between the nearest bend and that tip).
   function addBend(l: Line) {
@@ -1776,6 +1794,8 @@ export function Board({
                   <LineMenu
                     key={l.id}
                     time={l.time}
+                    color={l.color}
+                    onColor={(color) => updateLine(l.id, { color })}
                     onDone={(time) => {
                       updateLine(l.id, { time });
                       setSelection([]);
@@ -2058,19 +2078,38 @@ export function Board({
         )}
         {groupBox && (
           // Beside the selection box; stays the same size on screen.
-          <button
-            data-group-button
+          <div
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => toggleGroup(isOneGroup)}
-            className="absolute origin-top-left rounded-md border border-stone-200 bg-white px-2 py-1 text-sm shadow"
+            className="absolute flex origin-top-left flex-col items-start gap-1"
             style={{
               left: groupBox.maxX + px(12),
               top: groupBox.minY - px(6),
               transform: `scale(${1 / view.scale})`,
             }}
           >
-            {isOneGroup ? "Ungroup" : "Group"}
-          </button>
+            <button
+              data-group-button
+              onClick={() => toggleGroup(isOneGroup)}
+              className="rounded-md border border-stone-200 bg-white px-2 py-1 text-sm shadow"
+            >
+              {isOneGroup ? "Ungroup" : "Group"}
+            </button>
+            {/* One colour for everything selected. */}
+            <div
+              data-group-colors
+              className="flex gap-1.5 rounded-md border border-stone-200 bg-white px-2 py-1.5 shadow"
+            >
+              {TEXT_COLORS.map((color) => (
+                <button
+                  key={color}
+                  aria-label={`Colour ${color}`}
+                  onClick={() => colorSelection(color)}
+                  className="size-5 rounded-full"
+                  style={{ background: color }}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
