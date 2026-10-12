@@ -86,7 +86,7 @@ import {
 import { BULLET, isPlain, mergeRuns, runLines, setListKind, sliceRuns, type ListKind, type Run } from "./richText";
 import { SIDE_MENU_W, SideMenu } from "./SideMenu";
 import { TextEditor } from "./TextEditor";
-import { nowAlong, subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
+import { dateAlong, subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
 
 type View = { x: number; y: number; scale: number };
 // The room (in board units) one smaller step of a stretched timeline needs
@@ -195,6 +195,11 @@ export function Board({
   // and the timeline whose arrow is showing the word "Now".
   const [now, setNow] = useState(() => new Date());
   const [nowShown, setNowShown] = useState<number | null>(null);
+  // The timeline whose "Deadline task" is asking for the deadline, what's
+  // typed so far, and why it couldn't be made.
+  const [deadlineFor, setDeadlineFor] = useState<number | null>(null);
+  const [deadlineInput, setDeadlineInput] = useState("");
+  const [deadlineError, setDeadlineError] = useState<string | null>(null);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
@@ -1003,6 +1008,16 @@ export function Board({
       moveMany(d.many, snap.dx, snap.dy, o);
       return;
     }
+    // A deadline task's text only slides straight across its timeline,
+    // staying level with its date.
+    const dragged = d.kind === "text" ? o.texts.find((t) => t.id === d.id) : undefined;
+    const spot = dragged?.deadline && deadlineSpot(dragged.deadline, o);
+    if (dragged && spot) {
+      const off = (dragged.x + dx - spot.p.x) * spot.n.x + (dragged.y + dy - spot.p.y) * spot.n.y;
+      setSnapGuides([]);
+      moveMany([keyOf("text", d.id)], spot.p.x + spot.n.x * off - dragged.x, spot.p.y + spot.n.y * off - dragged.y, o);
+      return;
+    }
     if (d.kind === "circle" || d.kind === "text" || d.kind === "square" || d.kind === "picture") {
       const key = keyOf(d.kind, d.id);
       const snap = snapBoxes(
@@ -1346,6 +1361,51 @@ export function Board({
     setEditing(id);
   }
 
+  // Where a deadline sits on its timeline, and the direction straight across
+  // the timeline there, on the side away from its labels (null when the
+  // timeline is gone or the deadline isn't on it).
+  function deadlineSpot(d: { line: number; at: string }, data: BoardData = board) {
+    const l = data.lines.find((x) => x.id === d.line);
+    const f = l?.time && dateAlong(l.time, new Date(d.at));
+    if (!l || f === null || f === undefined) return null;
+    const pts = drawPoints(resolve(l, data));
+    const { p, dir } = pointAlong(pts, f * (polylineLength(pts) || 1));
+    let n = { x: dir.y, y: -dir.x };
+    if (n.y > 0 || (n.y === 0 && n.x > 0)) n = { x: -n.x, y: -n.y };
+    return { p, n, upright: Math.abs(dir.y) > Math.abs(dir.x) };
+  }
+
+  // A timeline's "Deadline task": a bold text with a checkbox level with the
+  // deadline's date, ready to type. Once it has words it's on Home's
+  // Priority tasks too, with this deadline, ticked together with the text.
+  function addDeadlineText(l: Line, at: Date) {
+    const deadline = { line: l.id, at: at.toISOString() };
+    const spot = deadlineSpot(deadline);
+    if (!spot) return false;
+    const gap = spot.upright ? 72 : 36;
+    const id = nextId.current++;
+    commit();
+    setTexts((ts) => [
+      ...ts,
+      {
+        id,
+        x: spot.p.x + spot.n.x * gap,
+        y: spot.p.y + spot.n.y * gap,
+        text: `${UNCHECKED} `,
+        fontSize: TEXT_SIZE,
+        color: TEXT_COLORS[0],
+        bold: true,
+        link: crypto.randomUUID(),
+        deadline,
+      },
+    ]);
+    setSelection([]);
+    editingIsNew.current = true;
+    editingAppend.current = "";
+    setEditing(id);
+    return true;
+  }
+
   // The circle menu's square icon: swap the circle for a square outline in the
   // same place (same id, so attached lines stay attached), still selected.
   function circleToSquare(c: Circle) {
@@ -1444,6 +1504,14 @@ export function Board({
     if (!editingIsNew.current && changed) commit();
     if (text) {
       setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, text, runs } : t)));
+      // A deadline task's words go to Home's Priority tasks too.
+      const words = taskText(text);
+      if (current?.deadline && current.link && words && changed) {
+        const done = text.split("\n")[firstBoxLine(text)]?.trimStart()[0] === CHECKED;
+        void planner
+          ?.add({ kind: "priority", deadline: current.deadline.at }, { text: words, link: current.link, done })
+          .catch(() => {});
+      }
       return;
     }
     // An empty text would be invisible, so drop it.
@@ -1739,7 +1807,7 @@ export function Board({
   // labels (drawn above the line so it can be hovered). Hovering or pressing
   // it shows "Now".
   function nowArrow(l: Line, pts: Point[]) {
-    const f = l.time ? nowAlong(l.time, now) : null;
+    const f = l.time ? dateAlong(l.time, now) : null;
     if (f === null) return null;
     const { p, dir } = pointAlong(pts, f * (polylineLength(pts) || 1));
     let nx = dir.y;
@@ -2537,6 +2605,51 @@ export function Board({
                   >
                     Phase
                   </button>
+                )}
+                {!ends && planner && (
+                  <button
+                    data-deadline-task
+                    onClick={() => {
+                      setDeadlineFor(deadlineFor === selectedLine.id ? null : selectedLine.id);
+                      setDeadlineError(null);
+                    }}
+                    className={`w-full rounded px-2 py-1 text-left text-sm ${deadlineFor === selectedLine.id ? "bg-stone-100" : "hover:bg-stone-100"}`}
+                  >
+                    Deadline task
+                  </button>
+                )}
+                {deadlineFor === selectedLine.id && (
+                  <form
+                    data-deadline-form
+                    className="space-y-1 px-2 py-1"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const at = new Date(deadlineInput);
+                      if (!deadlineInput || isNaN(at.getTime())) return setDeadlineError("Pick a date and time.");
+                      if (!addDeadlineText(selectedLine, at))
+                        return setDeadlineError("That date isn't on this timeline.");
+                      setDeadlineFor(null);
+                      setDeadlineInput("");
+                    }}
+                  >
+                    <label className="block text-xs text-stone-500">
+                      Deadline
+                      <input
+                        type="datetime-local"
+                        autoFocus
+                        value={deadlineInput}
+                        onChange={(e) => {
+                          setDeadlineInput(e.target.value);
+                          setDeadlineError(null);
+                        }}
+                        className="mt-0.5 block rounded border border-stone-300 px-2 py-1 text-sm text-stone-900"
+                      />
+                    </label>
+                    {deadlineError && <p className="text-xs text-red-600">{deadlineError}</p>}
+                    <button className="w-full rounded bg-stone-900 px-2 py-1 text-sm font-medium text-white">
+                      Make task
+                    </button>
+                  </form>
                 )}
                 <div className="flex gap-1.5 px-2 py-1.5">
                   {TEXT_COLORS.map((color) => (

@@ -4,7 +4,10 @@ import { useState } from "react";
 import { ChainIcon } from "./icons";
 
 // Where a text on the board can be added as a task.
-export type AddTarget = { kind: "today" } | { kind: "phase" } | { kind: "page"; id: string };
+// "priority": Home's Priority tasks, with a deadline (from a timeline's
+// "Deadline task").
+export type AddTarget =
+  { kind: "today" } | { kind: "phase" } | { kind: "page"; id: string } | { kind: "priority"; deadline: string };
 export type TaskPage = { id: string; title: string };
 
 // The text box's "Link". Hovering it shows "Add to"; hovering that pops up

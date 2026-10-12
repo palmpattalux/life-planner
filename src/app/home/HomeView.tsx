@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { daysUntil, loadPhase, savePhase, type Phase } from "@/lib/planner";
+import { daysUntil, loadPhase, loadPriority, savePhase, savePriority, type Phase, type Task } from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
 import { BoardList, useBoards } from "../BoardList";
 import { AccountMenu } from "./AccountMenu";
 import { PhaseBox } from "./PhaseBox";
+import { Deadlines, PriorityBox } from "./PriorityBox";
 import { TodayBox } from "./TodayBox";
 import { useHoverTap } from "./useHoverTap";
 import { useSaved } from "./useSaved";
@@ -20,7 +21,7 @@ function countdown(p: Phase | null) {
 }
 
 // Home: who's logged in on the left, a menu on the right (trash and Log out),
-// today's to-do list and the phase goal floating on the left, and every
+// today's to-do list, the milestone and priority tasks on the left, and every
 // board grouped in the middle, with the days left in the phase goal above.
 // (On narrower screens the to-do list and phase goal sit above the boards.)
 export function HomeView({ email }: { email?: string }) {
@@ -32,6 +33,11 @@ export function HomeView({ email }: { email?: string }) {
     "milestone",
     () => loadPhase(supabase),
     (p) => savePhase(supabase, p),
+  );
+  const priority = useSaved<Task[]>(
+    "priority",
+    () => loadPriority(supabase),
+    (tasks) => savePriority(supabase, tasks),
   );
   const left = countdown(phase.value);
 
@@ -53,6 +59,13 @@ export function HomeView({ email }: { email?: string }) {
               (supabase/schema.sql).
             </p>
           )}
+          <PriorityBox tasks={priority.value} onChange={priority.change} />
+          {priority.failed && (
+            <p className="text-xs text-red-600">
+              Couldn&apos;t load or save the priority tasks. If this keeps happening, the database may need its latest
+              setup (supabase/schema.sql).
+            </p>
+          )}
         </aside>
         {/* The boards, grouped in the middle of the screen with nothing around them. */}
         <div className="flex min-h-0 flex-1 flex-col items-center xl:overflow-y-auto">
@@ -67,6 +80,10 @@ export function HomeView({ email }: { email?: string }) {
             </div>
           </div>
         </div>
+        {/* The time left until each priority task's deadline. */}
+        <aside className="xl:overflow-y-auto xl:pt-16">
+          <Deadlines tasks={priority.value} />
+        </aside>
       </div>
     </main>
   );

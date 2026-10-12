@@ -109,3 +109,18 @@ create policy "own pictures" on storage.objects
 
 -- Added later: boards hidden from Home's main list (shown under the eye button).
 alter table public.pages add column if not exists hidden boolean not null default false;
+
+-- Added later: Home's Priority tasks (one row per person), each task with an
+-- optional deadline. Tasks made on a board timeline ("Deadline task") are
+-- linked to their board text through task_links.
+create table if not exists public.priority_tasks (
+  user_id uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  tasks jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.priority_tasks enable row level security;
+
+drop policy if exists "own priority tasks" on public.priority_tasks;
+create policy "own priority tasks" on public.priority_tasks
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

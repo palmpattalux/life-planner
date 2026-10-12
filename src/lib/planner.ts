@@ -1,12 +1,13 @@
-// Home's to-do list and phase goal, kept in Supabase (supabase/schema.sql:
-// todo_days, phase_goals, task_links). A board text added as a task shares
+// Home's to-do list, milestone and priority tasks, kept in Supabase
+// (supabase/schema.sql: todo_days, phase_goals, priority_tasks, task_links). A board text added as a task shares
 // a link id with the task; whether it's ticked lives in task_links, so
 // ticking either one ticks the other, while removing either leaves the other.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { TaskPage } from "@/components/board/LinkMenu";
 
 // `page`: a phase goal task's own page (a "note" in pages).
-export type Task = { id: string; text: string; done: boolean; link?: string; page?: string };
+// `deadline`: a priority task's deadline (an ISO date and time).
+export type Task = { id: string; text: string; done: boolean; link?: string; page?: string; deadline?: string };
 export type PhaseUnit = "day" | "week" | "month" | "year";
 // start / end are dates ("2026-10-12"); end is the last day of the phase.
 export type Phase = { unit: PhaseUnit | null; start: string | null; end: string | null; tasks: Task[] };
@@ -86,18 +87,16 @@ export async function loadPhase(sb: SupabaseClient): Promise<Phase> {
 }
 
 export async function savePhase(sb: SupabaseClient, p: Phase) {
-  const { error } = await sb
-    .from("phase_goals")
-    .upsert(
-      {
-        unit: p.unit,
-        start_date: p.start,
-        end_date: p.end,
-        tasks: p.tasks.filter((t) => t.text.trim()),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" },
-    );
+  const { error } = await sb.from("phase_goals").upsert(
+    {
+      unit: p.unit,
+      start_date: p.start,
+      end_date: p.end,
+      tasks: p.tasks.filter((t) => t.text.trim()),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
   if (error) throw error;
 }
 
@@ -126,6 +125,33 @@ export async function addPhaseTask(sb: SupabaseClient, t: Linked) {
   await setLinkDone(sb, t.link, t.done);
   const phase = await loadPhase(sb);
   await savePhase(sb, { ...phase, tasks: [...phase.tasks.filter((i) => i.text.trim()), linkedTask(t)] });
+}
+
+export async function loadPriority(sb: SupabaseClient): Promise<Task[]> {
+  const { data, error } = await sb.from("priority_tasks").select("tasks").maybeSingle();
+  if (error) throw error;
+  return withLinkStates(sb, (data?.tasks as Task[]) ?? []);
+}
+
+export async function savePriority(sb: SupabaseClient, tasks: Task[]) {
+  const { error } = await sb
+    .from("priority_tasks")
+    .upsert(
+      { tasks: tasks.filter((t) => t.text.trim()), updated_at: new Date().toISOString() },
+      { onConflict: "user_id" },
+    );
+  if (error) throw error;
+}
+
+// A board's deadline task on Home's Priority tasks: added the first time,
+// and its words kept up to date after that.
+export async function putPriorityTask(sb: SupabaseClient, t: Linked, deadline: string) {
+  await setLinkDone(sb, t.link, t.done);
+  const tasks = (await loadPriority(sb)).filter((i) => i.text.trim());
+  const at = tasks.findIndex((i) => i.link === t.link);
+  if (at === -1) tasks.push({ ...linkedTask(t), deadline });
+  else tasks[at] = { ...tasks[at], text: t.text };
+  await savePriority(sb, tasks);
 }
 
 // The phase goal's tasks that have their own page.

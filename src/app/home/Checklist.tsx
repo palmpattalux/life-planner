@@ -10,12 +10,14 @@ import { newTask, type Task } from "@/lib/planner";
 // next line (also with a checkbox); Enter on an empty line, or clicking
 // elsewhere, finishes. Backspace on an empty line removes it.
 // `arrow`: something to show just after a task's words while it's hovered
-// (or, on a phone, pressed).
+// (or, on a phone, pressed). `extra`: something always shown after a task's
+// words.
 export function Checklist({
   tasks,
   onChange,
   onCheck,
   arrow,
+  extra,
   placeholder = "Add a task",
   focusRequest = 0,
 }: {
@@ -24,6 +26,7 @@ export function Checklist({
   // A linked task was ticked or unticked.
   onCheck?: (task: Task, done: boolean) => void;
   arrow?: (task: Task) => React.ReactNode;
+  extra?: (task: Task) => React.ReactNode;
   placeholder?: string;
   // Changing this number starts typing (a new line if the list is empty).
   focusRequest?: number;
@@ -131,6 +134,7 @@ export function Checklist({
               className={`col-start-1 row-start-1 w-full min-w-4 bg-transparent text-sm outline-none ${t.done ? "text-stone-400 line-through" : ""}`}
             />
           </span>
+          {extra && t.text.trim() && <span className="inline-flex shrink-0">{extra(t)}</span>}
           {arrow && t.text.trim() && (
             <span className="hidden shrink-0 group-focus-within:inline-flex group-hover:inline-flex">{arrow(t)}</span>
           )}

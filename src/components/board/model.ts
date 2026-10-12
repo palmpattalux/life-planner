@@ -38,6 +38,10 @@ export type Text = {
   // Added to Home's to-do list or the phase goal: the text's first checkbox
   // is ticked and unticked together with the task there (see lib/planner).
   link?: string;
+  // A deadline task made from a timeline: which timeline and the deadline (an
+  // ISO date and time). The text only slides across that timeline, staying
+  // level with its date.
+  deadline?: { line: number; at: string };
   group?: number;
   z?: number;
 };

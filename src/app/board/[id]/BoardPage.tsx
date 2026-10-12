@@ -6,6 +6,7 @@ import { Board, type BoardApi, type Planner } from "@/components/board/Board";
 import { fullBoard, type BoardData, type Preset } from "@/components/board/model";
 import {
   addPhaseTask,
+  putPriorityTask,
   addTaskToPage,
   addToToday,
   linkStates,
@@ -75,6 +76,7 @@ export function BoardPage({
       if (!linksRef.current.includes(task.link)) linksRef.current.push(task.link);
       if (to.kind === "today") await addToToday(supabase, task);
       else if (to.kind === "phase") await addPhaseTask(supabase, task);
+      else if (to.kind === "priority") await putPriorityTask(supabase, task, to.deadline);
       else await addTaskToPage(supabase, to.id, task);
     },
     taskPages: () => phaseTaskPages(supabase),
