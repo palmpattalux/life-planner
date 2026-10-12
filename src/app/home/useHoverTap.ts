@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-// A soft tap sound when the mouse moves onto something that pops on hover
+// A soft, quiet click when the mouse moves onto something that pops on hover
 // (marked `data-pop`), made on the spot with the Web Audio API (no sound
 // files). Browsers only allow sound once the page has been clicked or typed
 // in, so it starts after the first click.
@@ -20,18 +20,21 @@ export function useHoverTap() {
     function tap() {
       if (!ctx || ctx.state !== "running") return;
       const t = ctx.currentTime;
-      const osc = ctx.createOscillator();
+      // A tiny, quiet click: a few milliseconds of filtered noise.
+      const len = Math.floor(ctx.sampleRate * 0.012);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 4;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = 3200;
+      filter.Q.value = 1.2;
       const gain = ctx.createGain();
-      osc.type = "triangle";
-      // A short, soft knock: a quick high note that drops and fades away.
-      osc.frequency.setValueAtTime(1500, t);
-      osc.frequency.exponentialRampToValueAtTime(700, t + 0.04);
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.06, t + 0.004);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.07);
+      gain.gain.value = 0.05;
+      src.connect(filter).connect(gain).connect(ctx.destination);
+      src.start(t);
     }
 
     function onOver(e: PointerEvent) {
