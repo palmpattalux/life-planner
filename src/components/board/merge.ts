@@ -1,5 +1,5 @@
 // Merging one board's things into another board.
-import { EMPTY_BOARD, maxId, type BoardData } from "./model";
+import { fullBoard, maxId, type BoardData } from "./model";
 
 // Past this many things, or this much saved data, a board may start to feel
 // slow (every move redraws and snaps against everything on it).
@@ -8,7 +8,8 @@ export const SLOW_BYTES = 1_000_000;
 // The space left between what's already on the board and what's merged in.
 const MERGE_GAP = 200;
 
-export const itemCount = (d: BoardData) => d.circles.length + d.squares.length + d.texts.length + d.lines.length;
+export const itemCount = (d: BoardData) =>
+  d.circles.length + d.squares.length + d.texts.length + d.lines.length + d.pictures.length;
 
 // Whether a board this big might be slow.
 export const mightBeSlow = (d: BoardData) => itemCount(d) > SLOW_ITEMS || JSON.stringify(d).length > SLOW_BYTES;
@@ -18,7 +19,7 @@ export const mightBeSlow = (d: BoardData) => itemCount(d) > SLOW_ITEMS || JSON.s
 function bounds(d: BoardData) {
   const boxes = [
     ...d.circles.map((c) => [c.x - c.size / 2, c.y - c.size / 2, c.x + c.size / 2, c.y + c.size / 2]),
-    ...d.squares.map((q) => [q.x - q.w / 2, q.y - q.h / 2, q.x + q.w / 2, q.y + q.h / 2]),
+    ...[...d.squares, ...d.pictures].map((q) => [q.x - q.w / 2, q.y - q.h / 2, q.x + q.w / 2, q.y + q.h / 2]),
     ...d.texts.map((t) => {
       const rows = t.text.split("\n");
       const w = (Math.max(...rows.map((r) => r.length)) * t.fontSize * 0.55) / 2;
@@ -39,8 +40,8 @@ function bounds(d: BoardData) {
 // the target already has. The copies get new ids (and group numbers) so
 // nothing clashes; lines stay attached to the same things.
 export function mergeInto(target: BoardData, source: BoardData): BoardData {
-  const t = { ...EMPTY_BOARD, ...target };
-  const s = structuredClone({ ...EMPTY_BOARD, ...source });
+  const t = fullBoard(target);
+  const s = structuredClone(fullBoard(source));
   const tb = bounds(t);
   const sb = bounds(s);
   const dx = tb && sb ? tb.maxX + MERGE_GAP - sb.minX : 0;
@@ -63,6 +64,7 @@ export function mergeInto(target: BoardData, source: BoardData): BoardData {
   const circles = s.circles.map((c) => ({ ...move(c), id: newId(c.id), group: newGroup(c.group) }));
   const squares = s.squares.map((q) => ({ ...move(q), id: newId(q.id), group: newGroup(q.group) }));
   const texts = s.texts.map((x) => ({ ...move(x), id: newId(x.id), group: newGroup(x.group) }));
+  const pictures = s.pictures.map((p) => ({ ...move(p), id: newId(p.id), group: newGroup(p.group) }));
   const itemIds = new Set([...s.circles, ...s.squares, ...s.texts].map((i) => i.id));
   const attached = (id?: number) => (id !== undefined && itemIds.has(id) ? newId(id) : undefined);
   const lines = s.lines.map((l) => ({
@@ -80,5 +82,6 @@ export function mergeInto(target: BoardData, source: BoardData): BoardData {
     squares: [...t.squares, ...squares],
     texts: [...t.texts, ...texts],
     lines: [...t.lines, ...lines],
+    pictures: [...t.pictures, ...pictures],
   };
 }

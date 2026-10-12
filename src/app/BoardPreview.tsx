@@ -1,10 +1,10 @@
-import type { BoardData } from "@/components/board/model";
+import { fullBoard, type BoardData } from "@/components/board/model";
 import { INK } from "@/components/board/constants";
 
 // A small, slightly blurred picture of what's on a board, for its box on
-// Home. Just the shapes: circles, squares, texts and lines.
+// Home: its circles, squares, texts, lines and pictures.
 export function BoardPreview({ data }: { data: BoardData | null }) {
-  const d = { circles: [], squares: [], texts: [], lines: [], ...data };
+  const d = fullBoard(data);
   const items = [...d.circles, ...d.squares, ...d.texts];
   const at = (id: number | undefined, p: { x: number; y: number }) => {
     const item = id === undefined ? undefined : items.find((i) => i.id === id);
@@ -15,7 +15,7 @@ export function BoardPreview({ data }: { data: BoardData | null }) {
   // Everything's outer edges, so the picture frames all of it.
   const boxes = [
     ...d.circles.map((c) => [c.x - c.size / 2, c.y - c.size / 2, c.x + c.size / 2, c.y + c.size / 2]),
-    ...d.squares.map((q) => [q.x - q.w / 2, q.y - q.h / 2, q.x + q.w / 2, q.y + q.h / 2]),
+    ...[...d.squares, ...d.pictures].map((q) => [q.x - q.w / 2, q.y - q.h / 2, q.x + q.w / 2, q.y + q.h / 2]),
     ...d.texts.map((t) => {
       const rows = t.text.split("\n");
       const w = (Math.max(...rows.map((r) => r.length)) * t.fontSize * 0.55) / 2;
@@ -41,6 +41,9 @@ export function BoardPreview({ data }: { data: BoardData | null }) {
       className="absolute inset-0 size-full px-4 pb-10 pt-4 opacity-70 blur-[1.5px]"
       aria-hidden
     >
+      {d.pictures.map((p) => (
+        <image key={`p${p.id}`} href={p.src} x={p.x - p.w / 2} y={p.y - p.h / 2} width={p.w} height={p.h} />
+      ))}
       {d.squares.map((q) => (
         <rect
           key={`q${q.id}`}

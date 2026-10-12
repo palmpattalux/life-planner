@@ -2,8 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Board, type BoardApi } from "@/components/board/Board";
-import { EMPTY_BOARD, type BoardData, type Preset } from "@/components/board/model";
+import { Board, type BoardApi, type Planner } from "@/components/board/Board";
+import { fullBoard, type BoardData, type Preset } from "@/components/board/model";
+import {
+  addPhaseTask,
+  addTaskToPage,
+  addToToday,
+  linkStates,
+  phaseTaskPages,
+  setLinkDone,
+  uploadPicture,
+} from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
 import { statusText, useAutosave } from "@/lib/useAutosave";
 import { MergeDialog } from "../../MergeDialog";
@@ -46,6 +55,32 @@ export function BoardPage({
     if (isNew || mergeMode) history.replaceState(null, "", location.pathname);
   }, [isNew, mergeMode]);
 
+  // Texts added as tasks on Home: tick them to match their tasks when the
+  // board opens and whenever this tab is come back to.
+  const linksRef = useRef<string[]>([]);
+  useEffect(() => {
+    linksRef.current = fullBoard(initial).texts.flatMap((t) => (t.link ? [t.link] : []));
+    async function sync() {
+      const states = await linkStates(supabase, linksRef.current);
+      states.forEach((done, link) => board.current?.setLinkDone(link, done));
+    }
+    void sync();
+    const onVisible = () => document.visibilityState === "visible" && void sync();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const planner: Planner = {
+    add: async (to, task) => {
+      if (!linksRef.current.includes(task.link)) linksRef.current.push(task.link);
+      if (to.kind === "today") await addToToday(supabase, task);
+      else if (to.kind === "phase") await addPhaseTask(supabase, task);
+      else await addTaskToPage(supabase, to.id, task);
+    },
+    taskPages: () => phaseTaskPages(supabase),
+    onCheck: (link, done) => void setLinkDone(supabase, link, done).catch(() => {}),
+  };
+
   async function savePreset(data: BoardData) {
     // Named Preset 1, Preset 2, ... after the highest number so far.
     const n = Math.max(0, ...presets.map((p) => Number(p.name.match(/^Preset (\d+)$/)?.[1] ?? 0))) + 1;
@@ -70,7 +105,7 @@ export function BoardPage({
   return (
     <>
       <Board
-        initial={{ ...EMPTY_BOARD, ...initial }}
+        initial={fullBoard(initial)}
         onChange={(content) => save({ content })}
         presets={presets}
         onSavePreset={savePreset}
@@ -78,6 +113,8 @@ export function BoardPage({
         onDeletePreset={deletePreset}
         api={board}
         onSelectionChange={setSelectedCount}
+        planner={planner}
+        onUploadPicture={(file) => uploadPicture(supabase, file)}
       />
       {selecting && (
         <>

@@ -28,6 +28,9 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 - With several things selected, the **Save preset** button in the top right saves them as a preset (Preset 1, Preset 2, ...). Presets belong to you, so they can be used on any board.
 - Press **v** to open the menu on the right (press **v** again to close it). Its **Preset** button drops down every saved preset with **Use** (places a copy in the middle of the screen), **Edit** (places it, and the top right button becomes **Update preset**: select what the preset should be and press it to save over the old one) and **Delete**.
 - Click something (or select several) and press **Ctrl+C** (Cmd+C) to copy, then **Ctrl+V** (Cmd+V) to paste a copy at the cursor.
+- A picture copied from outside the site (for example **Copy image** in a browser) pastes onto the board with **Ctrl+V** (Cmd+V). Drag it to move it; scroll or pinch while it's selected to resize it.
+- A text dragged above or below a line snaps centred on the line's middle (pink guide).
+- Something that overlaps something else shows **Layer** in its box: **Move to front** / **Move to back**.
 - Drop a line end near a circle or text and it attaches: moving the circle or text moves that end. Drag the end away to detach it.
 - Drag a circle to move it anywhere.
 - Click a circle or text to select it and open its menu. While selected, the scroll wheel or trackpad resizes it instead of the board (text shows its px size and keeps its left edge in place). Click the board to deselect.
@@ -35,7 +38,13 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 - The circle menu's **Square** turns the circle into a square outline. Only the outline can be clicked or dragged, not the space inside. Its menu changes its colour and has **Text**, which adds a label on the outside of its top left corner in the same colour. It resizes like a circle, and when clicked its corners show handles: drag one to stretch it into any rectangle.
 - Dragging a circle, square or text near another one snaps its edges or middle in line with the other's, with pink guide lines, so things line up neatly side by side. Lines have their own snapping: dragging a line, an end or a bend lines its ends, bends and timeline marks up with other lines' ends, bends and marks. This also works when moving a group or selection that has squares in it.
 - **On a phone or tablet** a toolbar at the bottom stands in for the keys: **Circle** (like b) and **Text** (like t) add one in the middle of the screen, **Line** (like holding n) makes your next finger drag draw one line, plus **Undo**, **Redo**, **Delete** (the selected things) and **Presets** (like v). Tap things to select them and drag them with one finger; drag on empty board for a selection box. Two fingers work like a trackpad: move them to move around, pinch to zoom, and with something selected a pinch resizes it (a group only when you pinch inside its box).
-- Every menu has a chain icon (**Link**). It will link to other notes, pages or websites later; for now it does nothing.
+- A text's **Link** (chain icon): hover it, then **Add to**, then pick **Today's to-do list** or **Phase goal** to add the text there as a task (hover **Phase goal** to pick one of its task pages instead). The text gets a checkbox that's ticked together with the task; removing either one leaves the other. (In other menus the chain icon does nothing yet.)
+
+### Home
+
+- **Today's to-do list** (top left): click it to start typing; Enter adds the next line. It starts empty every day; **View past to-do days** shows the last 30 days.
+- **Phase goal**: click its dates to pick Day / Week / Month / Year and a beginning and end (Enter or click away to set), then write its tasks underneath. Hover a task (or tap it on a phone) for the arrow that opens the task's own page for notes and checklists.
+- The faint line above the boards counts the days until the phase goal ends.
 
 Built with Next.js, TypeScript, Tailwind CSS and Supabase (login). Deployed on Vercel.
 
@@ -84,7 +93,10 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 | Path | What it does |
 | --- | --- |
 | `src/app/page.tsx` | Opens the most recent board (or Home when there are none) |
-| `src/app/home/` | Home page: account email, menu with Log out, all boards |
+| `src/app/home/` | Home page: account email, menu with Log out, to-do list, phase goal, countdown, all boards |
+| `src/app/task/[id]/` | A phase goal task's page (notes, made with TipTap) |
+| `src/lib/planner.ts` | Saving the to-do list, phase goal, linked ticks and pasted pictures |
+| `src/components/board/LinkMenu.tsx` | A text's Link > Add to menu |
 | `src/app/MergeDialog.tsx` | Merge: picking the other board, the warning, and merging |
 | `src/components/board/merge.ts` | Merging one board's things into another (new ids, placed to the right) |
 | `src/app/TornPaper.tsx` | The torn paper behind a board's name on Home |
@@ -99,7 +111,7 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 | `src/lib/supabase/` | Connecting to Supabase (server, browser, login check) |
 | `src/middleware.ts` | Keeps you logged in and protects every page |
 | `src/components/board/Board.tsx` | The white board |
-| `src/components/board/model.ts` | What a board is made of (circles, squares, texts, lines, presets) |
+| `src/components/board/model.ts` | What a board is made of (circles, squares, texts, lines, pictures, presets) |
 | `src/components/board/constants.ts` | Sizes, colours and limits |
 | `src/components/board/TextEditor.tsx` | Typing text (lists, Tab, sizes, bold, colours) |
 | `src/components/board/richText.ts` | Text with parts in different sizes, bold and colours |

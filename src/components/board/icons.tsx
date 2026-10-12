@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 // Small icons used in the menus.
 
 export function SquareIcon() {
@@ -93,5 +97,50 @@ export function CheckMark({ color }: { color: string }) {
     >
       <path d="M2.2 5.2 L4.2 7.2 L7.8 3" />
     </svg>
+  );
+}
+
+export function LayersIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+    >
+      <path d="M8 2 L14.5 5.5 L8 9 L1.5 5.5 Z" />
+      <path d="M1.5 9 L8 12.5 L14.5 9" />
+    </svg>
+  );
+}
+
+// "Layer" in the box of something that overlaps something else: click it for
+// Move to front and Move to back.
+export function LayerButton({ onFront, onBack }: { onFront: () => void; onBack: () => void }) {
+  const [open, setOpen] = useState(false);
+  const item = "w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100";
+  return (
+    <div data-layer>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm ${open ? "bg-stone-100" : "hover:bg-stone-100"}`}
+      >
+        <LayersIcon />
+        Layer
+      </button>
+      {open && (
+        <div className="pl-6">
+          <button data-layer-front onClick={onFront} className={item}>
+            Move to front
+          </button>
+          <button data-layer-back onClick={onBack} className={item}>
+            Move to back
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

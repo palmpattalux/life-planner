@@ -14,6 +14,7 @@ import {
   LINE_LABEL_SIZE,
   MAJOR_TICK,
   MAX_CIRCLE,
+  MAX_PICTURE,
   MAX_SCALE,
   MAX_TEXT,
   MAX_UNDO,
@@ -23,6 +24,7 @@ import {
   PHASE_GAP,
   PHASE_GAP_PAST_LABELS,
   PHASE_ORANGE,
+  PICTURE_SIZE,
   PIN_GROW,
   RESIZE_UNDO_GAP_MS,
   SELECT_BLUE,
@@ -35,6 +37,7 @@ import {
   TICK,
   TICK_LABEL_GAP,
   TICK_LABEL_SIZE,
+  TOP_LAYER,
   UNCHECKED,
 } from "./constants";
 import {
@@ -54,14 +57,16 @@ import {
   type Box,
   type Point,
 } from "./geometry";
-import { CheckMark, ChecklistIcon, LinkButton, PinIcon, SquareIcon } from "./icons";
+import { CheckMark, ChecklistIcon, LayerButton, LinkButton, PinIcon, SquareIcon } from "./icons";
 import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
+import { LinkMenu, type AddTarget, type TaskPage } from "./LinkMenu";
 import { ToolIcon } from "./ToolIcon";
 import { keptGuides, snapBoxes, type SnapBox } from "./snapping";
 import {
   allKeys,
   EMPTY_BOARD,
+  fullBoard,
   idsOf,
   keyOf,
   maxId,
@@ -71,6 +76,7 @@ import {
   type Key,
   type Kind,
   type Line,
+  type Picture,
   type Pin,
   type Preset,
   type Square,
@@ -124,6 +130,18 @@ export type BoardApi = {
   // Take the selected things off the board (can be undone); returns the
   // board as it is without them.
   removeSelected: () => BoardData;
+  // A linked task was ticked or unticked somewhere else: tick or untick the
+  // linked text's first checkbox to match (not an undoable change).
+  setLinkDone: (link: string, done: boolean) => void;
+};
+
+// Adding board texts as tasks on Home's to-do list or the phase goal, kept
+// by the page around the board (see lib/planner).
+export type Planner = {
+  add: (to: AddTarget, task: { text: string; link: string; done: boolean }) => Promise<void>;
+  taskPages: () => Promise<TaskPage[]>;
+  // A linked text's first checkbox was ticked or unticked on the board.
+  onCheck: (link: string, done: boolean) => void;
 };
 
 export function Board({
@@ -135,6 +153,8 @@ export function Board({
   onDeletePreset,
   api,
   onSelectionChange,
+  planner,
+  onUploadPicture,
 }: {
   initial?: BoardData;
   onChange?: (data: BoardData) => void;
@@ -145,13 +165,17 @@ export function Board({
   api?: React.Ref<BoardApi>;
   // Told how many things are selected whenever that changes.
   onSelectionChange?: (count: number) => void;
+  planner?: Planner;
+  // Stores a pasted picture and gives back its address.
+  onUploadPicture?: (file: Blob) => Promise<string>;
 }) {
   const [board, setBoard] = useState<BoardData>(initial);
-  const { circles, squares, texts, lines } = board;
+  const { circles, squares, texts, lines, pictures } = board;
   const setCircles = (f: (cs: Circle[]) => Circle[]) => setBoard((b) => ({ ...b, circles: f(b.circles) }));
   const setSquares = (f: (qs: Square[]) => Square[]) => setBoard((b) => ({ ...b, squares: f(b.squares) }));
   const setTexts = (f: (ts: Text[]) => Text[]) => setBoard((b) => ({ ...b, texts: f(b.texts) }));
   const setLines = (f: (ls: Line[]) => Line[]) => setBoard((b) => ({ ...b, lines: f(b.lines) }));
+  const setPictures = (f: (ps: Picture[]) => Picture[]) => setBoard((b) => ({ ...b, pictures: f(b.pictures) }));
 
   const [selection, setSelection] = useState<Key[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
@@ -232,6 +256,7 @@ export function Board({
   const linePressedAt = useRef<{ id: number; at: Point } | null>(null);
   // What Ctrl+C copied, ready for Ctrl+V.
   const clipboard = useRef<BoardData | null>(null);
+  const pasteFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [presetSaved, setPresetSaved] = useState(false);
   // The right-hand menu opened with "v".
   const [menuOpen, setMenuOpen] = useState(false);
@@ -320,8 +345,8 @@ export function Board({
         ? { minX: c.x - c.size / 2, minY: c.y - c.size / 2, maxX: c.x + c.size / 2, maxY: c.y + c.size / 2 }
         : null;
     }
-    if (kind === "square") {
-      const q = data.squares.find((q) => q.id === id);
+    if (kind === "square" || kind === "picture") {
+      const q = (kind === "square" ? data.squares : data.pictures).find((q) => q.id === id);
       return q ? { minX: q.x - q.w / 2, minY: q.y - q.h / 2, maxX: q.x + q.w / 2, maxY: q.y + q.h / 2 } : null;
     }
     if (kind === "text") {
@@ -342,6 +367,7 @@ export function Board({
     return [
       ...data.circles.map((c) => ({ key: keyOf("circle", c.id), x: c.x, y: c.y, w: c.size, h: c.size })),
       ...data.squares.map((q) => ({ key: keyOf("square", q.id), x: q.x, y: q.y, w: q.w, h: q.h })),
+      ...data.pictures.map((p) => ({ key: keyOf("picture", p.id), x: p.x, y: p.y, w: p.w, h: p.h })),
       ...data.texts.map((t) => {
         // The text's size from the page; its centre from the data (the page
         // may already show it moved).
@@ -351,6 +377,18 @@ export function Board({
       ...data.lines.flatMap((l) =>
         lineSnapPoints(l, data).map((p) => ({ key: keyOf("line", l.id), ...p, w: 0, h: 0, line: true })),
       ),
+      // Each line's middle, so a text above or below it snaps centred on it.
+      ...data.lines.map((l) => {
+        const pts = pointsOf(resolve(l, data));
+        const { p, dir } = pointAlong(pts, polylineLength(pts) / 2);
+        return {
+          key: keyOf("line", l.id),
+          ...p,
+          w: 0,
+          h: 0,
+          mid: Math.abs(dir.x) >= Math.abs(dir.y) ? "x" : "y",
+        } as SnapBox;
+      }),
     ];
   }
 
@@ -392,7 +430,7 @@ export function Board({
       const c = circles.find((c) => c.id === id);
       return !!c && circleTouchesBox(c, c.size / 2, area);
     }
-    if (kind === "text") {
+    if (kind === "text" || kind === "picture") {
       const box = boxOf(key);
       return !!box && boxesTouch(box, area);
     }
@@ -421,6 +459,7 @@ export function Board({
       ...data.texts.map((t) => [keyOf("text", t.id), t.group] as [Key, number | undefined]),
       ...data.squares.map((q) => [keyOf("square", q.id), q.group] as [Key, number | undefined]),
       ...data.lines.map((l) => [keyOf("line", l.id), l.group] as [Key, number | undefined]),
+      ...data.pictures.map((p) => [keyOf("picture", p.id), p.group] as [Key, number | undefined]),
     ];
     const groups = new Set(all.filter(([k, g]) => g !== undefined && keys.includes(k)).map(([, g]) => g));
     return all.filter(([k, g]) => keys.includes(k) || (g !== undefined && groups.has(g))).map(([k]) => k);
@@ -433,8 +472,10 @@ export function Board({
     const tIds = idsOf(keys, "text");
     const sIds = idsOf(keys, "square");
     const lIds = idsOf(keys, "line");
+    const pIds = idsOf(keys, "picture");
     const kept = (id?: number) => (id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id)) ? id : undefined);
     return structuredClone({
+      pictures: data.pictures.filter((p) => pIds.has(p.id)),
       circles: data.circles.filter((c) => cIds.has(c.id)),
       squares: data.squares.filter((q) => sIds.has(q.id)),
       texts: data.texts.filter((t) => tIds.has(t.id)),
@@ -451,9 +492,11 @@ export function Board({
     const tIds = idsOf(sel, "text");
     const sIds = idsOf(sel, "square");
     const lIds = idsOf(sel, "line");
+    const pIds = idsOf(sel, "picture");
     const group = isGroup ? undefined : nextId.current++;
     commit();
     setBoard((b) => ({
+      pictures: b.pictures.map((p) => (pIds.has(p.id) ? { ...p, group } : p)),
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, group } : c)),
       squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, group } : q)),
       texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, group } : t)),
@@ -462,8 +505,16 @@ export function Board({
   }
 
   // Add a copy of `items` centred on `at`, with new ids, and select it.
-  function paste(items: BoardData, at: Point) {
-    const pts = [...items.circles, ...items.squares, ...items.texts, ...items.lines.flatMap((l) => pointsOf(l))];
+  function paste(saved: BoardData, at: Point) {
+    // (Presets saved before pictures existed have none.)
+    const items = fullBoard(saved);
+    const pts = [
+      ...items.circles,
+      ...items.squares,
+      ...items.texts,
+      ...items.pictures,
+      ...items.lines.flatMap((l) => pointsOf(l)),
+    ];
     const box = boxAround(pts);
     const dx = at.x - (box.minX + box.maxX) / 2;
     const dy = at.y - (box.minY + box.maxY) / 2;
@@ -482,7 +533,15 @@ export function Board({
     const copy = structuredClone(items);
     const circles = copy.circles.map((c) => ({ ...c, ...move(c), id: newId(c.id), group: newGroup(c.group) }));
     const squares = copy.squares.map((q) => ({ ...q, ...move(q), id: newId(q.id), group: newGroup(q.group) }));
-    const texts = copy.texts.map((t) => ({ ...t, ...move(t), id: newId(t.id), group: newGroup(t.group) }));
+    // A copy isn't linked to the to-do list or phase goal (only the original is).
+    const texts = copy.texts.map((t) => ({
+      ...t,
+      ...move(t),
+      id: newId(t.id),
+      group: newGroup(t.group),
+      link: undefined,
+    }));
+    const pictures = copy.pictures.map((p) => ({ ...p, ...move(p), id: newId(p.id), group: newGroup(p.group) }));
     const lines = copy.lines.map((l) => ({
       ...l,
       id: nextId.current++,
@@ -499,8 +558,9 @@ export function Board({
       squares: [...b.squares, ...squares],
       texts: [...b.texts, ...texts],
       lines: [...b.lines, ...lines],
+      pictures: [...b.pictures, ...pictures],
     }));
-    setSelection(allKeys({ circles, squares, texts, lines }));
+    setSelection(allKeys({ circles, squares, texts, lines, pictures }));
     setEditing(null);
     setEditingLabel(null);
     setEditingLineLabel(null);
@@ -606,6 +666,12 @@ export function Board({
       f = Math.min(f, MAX_CIRCLE / Math.max(q.w, q.h));
     }
     for (const t of data.texts) if (tIds.has(t.id)) f = clamp(t.fontSize * f, MIN_TEXT, MAX_TEXT) / t.fontSize;
+    const pIds = idsOf(sel, "picture");
+    for (const p of data.pictures) {
+      if (!pIds.has(p.id)) continue;
+      f = Math.max(f, MIN_CIRCLE / Math.min(p.w, p.h));
+      f = Math.min(f, MAX_PICTURE / Math.max(p.w, p.h));
+    }
     const scalePt = (p: Point) => (single ? p : { x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f });
     // A text resized on its own keeps its left edge where it is, so it never
     // needs lining up again.
@@ -616,6 +682,7 @@ export function Board({
     setBoard((b) => ({
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, ...scalePt(c), size: c.size * f } : c)),
       squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, ...scalePt(q), w: q.w * f, h: q.h * f } : q)),
+      pictures: b.pictures.map((p) => (pIds.has(p.id) ? { ...p, ...scalePt(p), w: p.w * f, h: p.h * f } : p)),
       texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, ...textAt(t), fontSize: t.fontSize * f } : t)),
       lines: b.lines.map((l) =>
         lIds.has(l.id)
@@ -645,8 +712,10 @@ export function Board({
     const tIds = idsOf(keys, "text");
     const sIds = idsOf(keys, "square");
     const lIds = idsOf(keys, "line");
+    const pIds = idsOf(keys, "picture");
     const gone = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
     return {
+      pictures: b.pictures.filter((p) => !pIds.has(p.id)),
       circles: b.circles.filter((c) => !cIds.has(c.id)),
       squares: b.squares.filter((q) => !sIds.has(q.id)),
       texts: b.texts.filter((t) => !tIds.has(t.id)),
@@ -676,6 +745,14 @@ export function Board({
       setSelection([]);
       return rest;
     },
+    setLinkDone: (link, done) =>
+      setTexts((ts) =>
+        ts.map((t) => {
+          if (t.link !== link || firstBoxLine(t.text) === -1) return t;
+          const next = withFirstBox(t, done ? CHECKED : UNCHECKED);
+          return next.text === t.text ? t : next;
+        }),
+      ),
   }));
   useEffect(() => onSelectionChange?.(selection.length), [selection.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -719,6 +796,41 @@ export function Board({
     commit();
     removeKeys(sel);
     setSelection([]);
+  }
+
+  // A picture pasted from outside the site: shrunk if it's huge, stored
+  // (or kept in the board itself if it can't be), then put on the board
+  // centred on `at`, selected.
+  async function addPicture(file: Blob, at: Point) {
+    let bitmap: ImageBitmap;
+    try {
+      bitmap = await createImageBitmap(file);
+    } catch {
+      return;
+    }
+    const shrink = (max: number) => {
+      const k = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * k);
+      canvas.height = Math.round(bitmap.height * k);
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    };
+    let src: string;
+    try {
+      if (!onUploadPicture) throw new Error();
+      const blob = await new Promise<Blob | null>((ok) => shrink(2000).toBlob(ok, "image/webp", 0.9));
+      if (!blob) throw new Error();
+      src = await onUploadPicture(blob);
+    } catch {
+      src = shrink(1000).toDataURL("image/webp", 0.85);
+    }
+    // As big on screen as the picture itself, up to a limit.
+    const k = Math.min(1, PICTURE_SIZE / Math.max(bitmap.width, bitmap.height)) / viewRef.current.scale;
+    const id = nextId.current++;
+    commit();
+    setPictures((ps) => [...ps, { id, x: at.x, y: at.y, w: bitmap.width * k, h: bitmap.height * k, src }]);
+    setSelection([keyOf("picture", id)]);
   }
 
   // "b" (or the phone toolbar's Circle): a new circle here, selected straight
@@ -783,12 +895,23 @@ export function Board({
         if (sel.length === 0) return;
         e.preventDefault();
         clipboard.current = pickOut(sel, boardRef.current);
+        // Replace whatever was copied outside the site (like a picture), so
+        // pasting brings these back rather than that. Their words go along,
+        // for pasting somewhere else.
+        const words = clipboard.current.texts.map((t) => taskText(t.text)).join("\n");
+        navigator.clipboard?.writeText(words).catch(() => {});
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-        if (!clipboard.current) return;
-        e.preventDefault();
-        paste(clipboard.current, cursorOnBoard());
+        // The paste event below decides between a picture copied outside the
+        // site and things copied on the board. Some browsers don't send one
+        // without a text box focused; then paste the board's own copy.
+        if (pasteFallback.current) clearTimeout(pasteFallback.current);
+        const at = cursorOnBoard();
+        pasteFallback.current = setTimeout(() => {
+          pasteFallback.current = null;
+          if (clipboard.current) paste(clipboard.current, at);
+        }, 150);
         return;
       }
       if (e.key === "Backspace" || e.key === "Delete") {
@@ -815,11 +938,26 @@ export function Board({
       if (e.key.toLowerCase() === "n") finishDraft();
     }
 
+    // Pasting: a picture copied from outside the site goes on the board at
+    // the cursor; otherwise whatever was copied on the board.
+    function onPaste(e: ClipboardEvent) {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || ["INPUT", "TEXTAREA"].includes(el.tagName))) return;
+      if (pasteFallback.current) clearTimeout(pasteFallback.current);
+      pasteFallback.current = null;
+      const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+      e.preventDefault();
+      if (file) void addPicture(file, cursorOnBoard());
+      else if (clipboard.current) paste(clipboard.current, cursorOnBoard());
+    }
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("paste", onPaste);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("paste", onPaste);
     };
     // Set up once; reads current values through refs.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -856,7 +994,7 @@ export function Board({
       moveMany(d.many, snap.dx, snap.dy, o);
       return;
     }
-    if (d.kind === "circle" || d.kind === "text" || d.kind === "square") {
+    if (d.kind === "circle" || d.kind === "text" || d.kind === "square" || d.kind === "picture") {
       const key = keyOf(d.kind, d.id);
       const snap = snapBoxes(
         all.filter((s) => s.key === key),
@@ -967,8 +1105,10 @@ export function Board({
     const tIds = idsOf(keys, "text");
     const sIds = idsOf(keys, "square");
     const lIds = idsOf(keys, "line");
+    const pIds = idsOf(keys, "picture");
     const movesWithItem = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
     setBoard({
+      pictures: o.pictures.map((p) => (pIds.has(p.id) ? { ...p, ...move(p) } : p)),
       circles: o.circles.map((c) => (cIds.has(c.id) ? { ...c, ...move(c) } : c)),
       squares: o.squares.map((q) => (sIds.has(q.id) ? { ...q, ...move(q) } : q)),
       texts: o.texts.map((t) => (tIds.has(t.id) ? { ...t, ...move(t) } : t)),
@@ -995,7 +1135,7 @@ export function Board({
     e.currentTarget.setPointerCapture(e.pointerId);
     const sel = selectionRef.current;
     const itemKind: Kind | null =
-      kind === "circle" || kind === "square" || kind === "text" || kind === "line" ? kind : null;
+      kind === "circle" || kind === "square" || kind === "text" || kind === "line" || kind === "picture" ? kind : null;
     const inSelection = itemKind !== null && sel.length > 1 && sel.includes(keyOf(itemKind, id));
     const grouped = itemKind !== null ? withGroups([keyOf(itemKind, id)]) : [];
     const many = inSelection ? sel : grouped.length > 1 ? grouped : null;
@@ -1156,7 +1296,7 @@ export function Board({
     // A click without moving selects just that thing: circles and texts open
     // their menu, lines show their end dots, arrow buttons and menu. Clicking
     // a selected circle or text again deselects it.
-    if (d.kind === "circle" || d.kind === "square" || d.kind === "text" || d.kind === "line") {
+    if (d.kind === "circle" || d.kind === "square" || d.kind === "text" || d.kind === "line" || d.kind === "picture") {
       const k = keyOf(d.kind, d.id);
       const grouped = withGroups([k]);
       if (grouped.length > 1) setSelection(grouped);
@@ -1267,6 +1407,20 @@ export function Board({
         ...sliceRuns(t.runs, at + 1),
       ]);
     updateText(id, { text: lines.join("\n"), runs });
+    // The first box of a linked text is the task on Home too.
+    if (t.link && lineIndex === firstBoxLine(t.text)) planner?.onCheck(t.link, box === CHECKED);
+  }
+
+  // The text menu's Link > Add to: add the text as a task on Home's to-do
+  // list, the phase goal or one of its task pages. The text gets a checkbox
+  // (if it has none) that's ticked together with the task.
+  async function addTextTo(t: Text, to: AddTarget) {
+    if (!planner) return;
+    const link = t.link ?? crypto.randomUUID();
+    const boxed = firstBoxLine(t.text) === -1 ? withFirstBox(t, UNCHECKED) : t;
+    if (boxed !== t || !t.link) updateText(t.id, { text: boxed.text, runs: boxed.runs, link });
+    const done = boxed.text.split("\n")[firstBoxLine(boxed.text)].trimStart()[0] === CHECKED;
+    await planner.add(to, { text: taskText(t.text), link, done });
   }
 
   function confirmText(id: number, value: string, typed?: Run[]) {
@@ -1572,6 +1726,51 @@ export function Board({
     return [...main, ...subs];
   }
 
+  // Circles, squares, pictures and texts, back to front: by layer, and
+  // otherwise in that order. (Lines are always underneath them.)
+  const layered = [
+    ...circles.map((c) => ({ key: keyOf("circle", c.id), z: c.z ?? 0 })),
+    ...squares.map((q) => ({ key: keyOf("square", q.id), z: q.z ?? 0 })),
+    ...pictures.map((p) => ({ key: keyOf("picture", p.id), z: p.z ?? 0 })),
+    ...texts.map((t) => ({ key: keyOf("text", t.id), z: t.z ?? 0 })),
+  ];
+  const layerOf = new Map(
+    layered
+      .map((e, i) => ({ ...e, i }))
+      .sort((a, b) => a.z - b.z || a.i - b.i)
+      .map((e, i) => [e.key, i + 1]),
+  );
+  // Whether this thing overlaps any other circle, square, picture or text
+  // (only then does its box show Layer).
+  function overlapsOthers(key: Key) {
+    const box = boxOf(key);
+    return (
+      !!box &&
+      layered.some((e) => {
+        if (e.key === key) return false;
+        const other = boxOf(e.key);
+        return !!other && boxesTouch(box, other);
+      })
+    );
+  }
+  // Layer > Move to front / Move to back.
+  function moveLayer(key: Key, front: boolean) {
+    const zs = layered.map((e) => e.z);
+    const z = front ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
+    const [kind, idStr] = key.split(":");
+    const id = Number(idStr);
+    commit();
+    setBoard((b) => ({
+      ...b,
+      circles: kind === "circle" ? b.circles.map((c) => (c.id === id ? { ...c, z } : c)) : b.circles,
+      squares: kind === "square" ? b.squares.map((q) => (q.id === id ? { ...q, z } : q)) : b.squares,
+      pictures: kind === "picture" ? b.pictures.map((p) => (p.id === id ? { ...p, z } : p)) : b.pictures,
+      texts: kind === "text" ? b.texts.map((t) => (t.id === id ? { ...t, z } : t)) : b.texts,
+    }));
+  }
+  const layerButton = (key: Key) =>
+    overlapsOthers(key) && <LayerButton onFront={() => moveLayer(key, true)} onBack={() => moveLayer(key, false)} />;
+
   // Fade the dots out when zoomed far out so they don't turn into a grey haze.
   const dotAlpha = 0.12 * clamp((view.scale - 0.2) / 0.3, 0, 1);
   const single = selection.length === 1 ? selection[0] : null;
@@ -1586,7 +1785,15 @@ export function Board({
   const groupOf = (k: Key) => {
     const [kind, idStr] = k.split(":");
     const list: { id: number; group?: number }[] =
-      kind === "circle" ? circles : kind === "square" ? squares : kind === "text" ? texts : lines;
+      kind === "circle"
+        ? circles
+        : kind === "square"
+          ? squares
+          : kind === "text"
+            ? texts
+            : kind === "picture"
+              ? pictures
+              : lines;
     return list.find((x) => x.id === Number(idStr))?.group;
   };
   const isOneGroup =
@@ -1754,6 +1961,7 @@ export function Board({
             onPointerDown={(e) => startDrag(e, "circle", c.id)}
             className="absolute cursor-grab rounded-full border-2 border-stone-900 bg-white active:cursor-grabbing"
             style={{
+              zIndex: layerOf.get(keyOf("circle", c.id)),
               width: c.size,
               height: c.size,
               left: c.x - c.size / 2,
@@ -1773,7 +1981,13 @@ export function Board({
             <div
               key={q.id}
               className="pointer-events-none absolute"
-              style={{ left: q.x - q.w / 2, top: q.y - q.h / 2, width: q.w, height: q.h }}
+              style={{
+                zIndex: layerOf.get(keyOf("square", q.id)),
+                left: q.x - q.w / 2,
+                top: q.y - q.h / 2,
+                width: q.w,
+                height: q.h,
+              }}
             >
               <svg className="absolute inset-0 overflow-visible" width={q.w} height={q.h}>
                 {inGroup && (
@@ -1822,10 +2036,38 @@ export function Board({
           );
         })}
 
+        {pictures.map((p) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={p.id}
+            data-picture={p.id}
+            src={p.src}
+            alt=""
+            draggable={false}
+            onPointerDown={(e) => startDrag(e, "picture", p.id)}
+            className="absolute max-w-none cursor-grab select-none active:cursor-grabbing"
+            style={{
+              zIndex: layerOf.get(keyOf("picture", p.id)),
+              left: p.x - p.w / 2,
+              top: p.y - p.h / 2,
+              width: p.w,
+              height: p.h,
+              outline: selection.includes(keyOf("picture", p.id))
+                ? `${px(selection.length > 1 ? 3 : 2)}px solid rgb(59 130 246 / ${selection.length > 1 ? 0.35 : 0.8})`
+                : undefined,
+            }}
+          />
+        ))}
+
         {/* Guide lines while a square snaps, drawn above the squares and a
             little past them. */}
         {snapGuides.length > 0 && (
-          <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={BOARD_W} height={BOARD_H}>
+          <svg
+            className="pointer-events-none absolute left-0 top-0 overflow-visible"
+            width={BOARD_W}
+            height={BOARD_H}
+            style={{ zIndex: TOP_LAYER }}
+          >
             {snapGuides.map((g, i) => {
               const d = unit(g.a, g.b);
               const ext = px(12);
@@ -1894,155 +2136,188 @@ export function Board({
             background: t.bg,
           };
           return (
-            <div key={t.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: t.x, top: t.y }}>
-              {isEditing ? (
-                <TextEditor
-                  initial={t.text + editingAppend.current}
-                  initialRuns={[...(t.runs ?? [{ text: t.text }]), { text: editingAppend.current }]}
-                  style={style}
-                  lists
-                  onConfirm={(value, runs) => confirmText(t.id, value, runs)}
-                />
-              ) : (
-                <div
-                  data-text={t.id}
-                  onPointerDown={(e) => startDrag(e, "text", t.id)}
-                  onDoubleClick={() => startEditing(t.id)}
-                  className="cursor-grab whitespace-pre px-1 active:cursor-grabbing"
-                  style={{
-                    ...style,
-                    boxShadow: inGroup ? `0 0 0 ${px(2)}px rgb(59 130 246 / 0.35)` : undefined,
-                  }}
-                >
-                  {runLines(t.runs ?? [{ text: t.text }]).map((lineRuns, i) => {
-                    const full = lineRuns.map((r) => r.text).join("");
-                    const indent = full.match(/^ */)![0];
-                    const line = full.slice(indent.length);
-                    const box = line[0] === UNCHECKED || line[0] === CHECKED;
-                    const boxRun = sliceRuns(lineRuns, indent.length, indent.length + 1)[0];
-                    const boxColor = boxRun?.color ?? t.color;
-                    const restFrom = indent.length + (box ? (line[1] === " " ? 2 : 1) : 0);
-                    return (
-                      <Fragment key={i}>
-                        {i > 0 && "\n"}
-                        {indent}
-                        {box && (
-                          <span style={{ fontSize: boxRun.scale ? `${boxRun.scale}em` : undefined }}>
+            // Centred on t.x, t.y without a transform, so the text's layer and
+            // its menu (always on top) aren't boxed in together.
+            <div
+              key={t.id}
+              className="absolute flex items-center justify-center"
+              style={{ left: t.x, top: t.y, width: 0, height: 0 }}
+            >
+              <div className="relative shrink-0">
+                {isEditing ? (
+                  <div className="relative" style={{ zIndex: TOP_LAYER }}>
+                    <TextEditor
+                      initial={t.text + editingAppend.current}
+                      initialRuns={[...(t.runs ?? [{ text: t.text }]), { text: editingAppend.current }]}
+                      style={style}
+                      lists
+                      onConfirm={(value, runs) => confirmText(t.id, value, runs)}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    data-text={t.id}
+                    onPointerDown={(e) => startDrag(e, "text", t.id)}
+                    onDoubleClick={() => startEditing(t.id)}
+                    className="relative cursor-grab whitespace-pre px-1 active:cursor-grabbing"
+                    style={{
+                      ...style,
+                      zIndex: layerOf.get(keyOf("text", t.id)),
+                      boxShadow: inGroup ? `0 0 0 ${px(2)}px rgb(59 130 246 / 0.35)` : undefined,
+                    }}
+                  >
+                    {runLines(t.runs ?? [{ text: t.text }]).map((lineRuns, i) => {
+                      const full = lineRuns.map((r) => r.text).join("");
+                      const indent = full.match(/^ */)![0];
+                      const line = full.slice(indent.length);
+                      const box = line[0] === UNCHECKED || line[0] === CHECKED;
+                      const boxRun = sliceRuns(lineRuns, indent.length, indent.length + 1)[0];
+                      const boxColor = boxRun?.color ?? t.color;
+                      const restFrom = indent.length + (box ? (line[1] === " " ? 2 : 1) : 0);
+                      return (
+                        <Fragment key={i}>
+                          {i > 0 && "\n"}
+                          {indent}
+                          {box && (
+                            <span style={{ fontSize: boxRun.scale ? `${boxRun.scale}em` : undefined }}>
+                              <span
+                                data-checkbox
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                onClick={() => toggleCheck(t.id, i)}
+                                className="relative inline-block cursor-pointer rounded-[0.12em] align-[-0.1em]"
+                                style={{
+                                  width: "0.85em",
+                                  height: "0.85em",
+                                  marginRight: "0.3em",
+                                  border: `0.09em solid ${boxColor}`,
+                                }}
+                              >
+                                {line[0] === CHECKED && <CheckMark color={boxColor} />}
+                              </span>
+                            </span>
+                          )}
+                          {sliceRuns(lineRuns, restFrom).map((r, j) => (
                             <span
-                              data-checkbox
-                              onPointerDown={(e) => e.stopPropagation()}
-                              onDoubleClick={(e) => e.stopPropagation()}
-                              onClick={() => toggleCheck(t.id, i)}
-                              className="relative inline-block cursor-pointer rounded-[0.12em] align-[-0.1em]"
+                              key={j}
                               style={{
-                                width: "0.85em",
-                                height: "0.85em",
-                                marginRight: "0.3em",
-                                border: `0.09em solid ${boxColor}`,
+                                fontSize: r.scale ? `${r.scale}em` : undefined,
+                                fontWeight: r.bold === undefined ? undefined : r.bold ? 700 : 400,
+                                color: r.color,
+                                backgroundColor: r.bg,
                               }}
                             >
-                              {line[0] === CHECKED && <CheckMark color={boxColor} />}
+                              {r.text}
                             </span>
-                          </span>
-                        )}
-                        {sliceRuns(lineRuns, restFrom).map((r, j) => (
-                          <span
-                            key={j}
-                            style={{
-                              fontSize: r.scale ? `${r.scale}em` : undefined,
-                              fontWeight: r.bold === undefined ? undefined : r.bold ? 700 : 400,
-                              color: r.color,
-                              backgroundColor: r.bg,
-                            }}
-                          >
-                            {r.text}
-                          </span>
-                        ))}
-                      </Fragment>
-                    );
-                  })}
-                </div>
-              )}
+                          ))}
+                        </Fragment>
+                      );
+                    })}
+                  </div>
+                )}
 
-              {sizeShownFor === t.id && (
-                <div
-                  data-size-label
-                  className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-stone-900 px-1.5 py-0.5 text-white"
-                  style={{ bottom: "100%", marginBottom: px(6), fontSize: px(12) }}
-                >
-                  {Math.round(t.fontSize)}px
-                </div>
-              )}
+                {sizeShownFor === t.id && (
+                  <div
+                    data-size-label
+                    className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-stone-900 px-1.5 py-0.5 text-white"
+                    style={{ bottom: "100%", marginBottom: px(6), fontSize: px(12), zIndex: TOP_LAYER }}
+                  >
+                    {Math.round(t.fontSize)}px
+                  </div>
+                )}
 
-              {showMenu && (
-                <div
-                  data-menu="text"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="absolute left-full top-0 flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
-                  style={{ marginLeft: 8 }}
-                >
-                  <div className="flex gap-1.5">
-                    {TEXT_COLORS.map((color) => (
+                {showMenu && (
+                  <div
+                    data-menu="text"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="absolute left-full top-0 flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
+                    style={{ marginLeft: 8, zIndex: TOP_LAYER }}
+                  >
+                    <div className="flex gap-1.5">
+                      {TEXT_COLORS.map((color) => (
+                        <button
+                          key={color}
+                          aria-label={`Colour ${color}`}
+                          onClick={() => updateText(t.id, { color })}
+                          className={`size-5 rounded-full ${t.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                          style={{ background: color }}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex gap-1">
                       <button
-                        key={color}
-                        aria-label={`Colour ${color}`}
-                        onClick={() => updateText(t.id, { color })}
-                        className={`size-5 rounded-full ${t.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
-                        style={{ background: color }}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      aria-label="Checklist"
-                      onClick={() => makeList(t, "check")}
-                      className="flex items-center rounded px-2 py-1 hover:bg-stone-100"
-                    >
-                      <ChecklistIcon />
-                    </button>
-                    <button
-                      aria-label="Bullet points"
-                      onClick={() => makeList(t, "bullet")}
-                      className="rounded px-2 py-1 text-sm hover:bg-stone-100"
-                    >
-                      {BULLET}
-                    </button>
-                    <button
-                      onClick={() => makeList(t, "number")}
-                      className="rounded px-2 py-1 text-sm hover:bg-stone-100"
-                    >
-                      1.2.3.
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => updateText(t.id, { bold: !t.bold })}
-                      className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
-                    >
-                      Bold
-                    </button>
-                    {/* Background fill for the whole text (none to start with). */}
-                    <button
-                      aria-label="No fill"
-                      onClick={() => updateText(t.id, { bg: undefined })}
-                      className={`size-5 rounded border border-stone-300 bg-[linear-gradient(135deg,transparent_45%,#d6d3d1_45%,#d6d3d1_55%,transparent_55%)] ${t.bg ? "" : "ring-2 ring-stone-400 ring-offset-1"}`}
-                    />
-                    {TEXT_FILLS.map((fill) => (
+                        aria-label="Checklist"
+                        onClick={() => makeList(t, "check")}
+                        className="flex items-center rounded px-2 py-1 hover:bg-stone-100"
+                      >
+                        <ChecklistIcon />
+                      </button>
                       <button
-                        key={fill}
-                        aria-label={`Fill ${fill}`}
-                        onClick={() => updateText(t.id, { bg: fill })}
-                        className={`size-5 rounded border border-stone-200 ${t.bg === fill ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
-                        style={{ background: fill }}
+                        aria-label="Bullet points"
+                        onClick={() => makeList(t, "bullet")}
+                        className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                      >
+                        {BULLET}
+                      </button>
+                      <button
+                        onClick={() => makeList(t, "number")}
+                        className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                      >
+                        1.2.3.
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => updateText(t.id, { bold: !t.bold })}
+                        className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                      >
+                        Bold
+                      </button>
+                      {/* Background fill for the whole text (none to start with). */}
+                      <button
+                        aria-label="No fill"
+                        onClick={() => updateText(t.id, { bg: undefined })}
+                        className={`size-5 rounded border border-stone-300 bg-[linear-gradient(135deg,transparent_45%,#d6d3d1_45%,#d6d3d1_55%,transparent_55%)] ${t.bg ? "" : "ring-2 ring-stone-400 ring-offset-1"}`}
                       />
-                    ))}
+                      {TEXT_FILLS.map((fill) => (
+                        <button
+                          key={fill}
+                          aria-label={`Fill ${fill}`}
+                          onClick={() => updateText(t.id, { bg: fill })}
+                          className={`size-5 rounded border border-stone-200 ${t.bg === fill ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                          style={{ background: fill }}
+                        />
+                      ))}
+                    </div>
+                    {layerButton(keyOf("text", t.id))}
+                    {planner ? (
+                      <LinkMenu onAdd={(to) => addTextTo(t, to)} taskPages={planner.taskPages} />
+                    ) : (
+                      <LinkButton />
+                    )}
                   </div>
-                  <LinkButton />
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })}
+
+        {single?.startsWith("picture:") &&
+          (() => {
+            const p = pictures.find((x) => x.id === singleId);
+            const layer = p && layerButton(keyOf("picture", p.id));
+            if (!p || !layer) return null;
+            return (
+              <div
+                data-menu="picture"
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+                style={{ left: p.x + p.w / 2 + 8, top: p.y - p.h / 2, zIndex: TOP_LAYER }}
+              >
+                {layer}
+              </div>
+            );
+          })()}
 
         {/* Handles for the selected line sit above circles so an attached end
             can still be grabbed. */}
@@ -2057,7 +2332,7 @@ export function Board({
                   className="absolute"
                   style={(() => {
                     const mid = pointAlong(pts, polylineLength(pts) / 2).p;
-                    return { left: mid.x + 12, top: mid.y + 12 };
+                    return { left: mid.x + 12, top: mid.y + 12, zIndex: TOP_LAYER };
                   })()}
                 >
                   <LineMenu
@@ -2080,6 +2355,7 @@ export function Board({
                   className="pointer-events-none absolute left-0 top-0 overflow-visible"
                   width={BOARD_W}
                   height={BOARD_H}
+                  style={{ zIndex: TOP_LAYER }}
                 >
                   {(l.bends ?? []).map((p, i) => (
                     <rect
@@ -2139,6 +2415,7 @@ export function Board({
                         height: px(22),
                         left: at.x - px(11),
                         top: at.y - px(11),
+                        zIndex: TOP_LAYER,
                       }}
                     >
                       <svg
@@ -2181,7 +2458,7 @@ export function Board({
                 data-menu="phase"
                 onPointerDown={(e) => e.stopPropagation()}
                 className={`absolute flex flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg ${toSide ? "-translate-x-full -translate-y-1/2" : "-translate-x-1/2 -translate-y-full"}`}
-                style={{ left: at.x + n.x * px(14), top: at.y + n.y * px(14) }}
+                style={{ left: at.x + n.x * px(14), top: at.y + n.y * px(14), zIndex: TOP_LAYER }}
               >
                 {!ends && (
                   <button
@@ -2235,7 +2512,11 @@ export function Board({
                 data-menu="pin"
                 onPointerDown={(e) => e.stopPropagation()}
                 className="absolute flex -translate-x-1/2 items-center gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
-                style={{ left: at.x, top: at.y + MAJOR_TICK * PIN_GROW + TICK_LABEL_SIZE * PIN_GROW * 2 + px(8) }}
+                style={{
+                  left: at.x,
+                  top: at.y + MAJOR_TICK * PIN_GROW + TICK_LABEL_SIZE * PIN_GROW * 2 + px(8),
+                  zIndex: TOP_LAYER,
+                }}
               >
                 <button
                   aria-label="Bold"
@@ -2265,7 +2546,11 @@ export function Board({
             data-menu="circle"
             onPointerDown={(e) => e.stopPropagation()}
             className="absolute min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-            style={{ left: menuCircle.x + menuCircle.size / 2 + 8, top: menuCircle.y - menuCircle.size / 2 }}
+            style={{
+              left: menuCircle.x + menuCircle.size / 2 + 8,
+              top: menuCircle.y - menuCircle.size / 2,
+              zIndex: TOP_LAYER,
+            }}
           >
             <button
               onClick={() => circleToText(menuCircle)}
@@ -2280,6 +2565,7 @@ export function Board({
               <SquareIcon />
               Square
             </button>
+            {layerButton(keyOf("circle", menuCircle.id))}
             <LinkButton />
           </div>
         )}
@@ -2302,6 +2588,7 @@ export function Board({
                 borderWidth: px(1.5),
                 left: menuSquare.x + (sx * menuSquare.w) / 2 - px(5),
                 top: menuSquare.y + (sy * menuSquare.h) / 2 - px(5),
+                zIndex: TOP_LAYER,
               }}
             />
           ))}
@@ -2311,7 +2598,11 @@ export function Board({
             data-menu="square"
             onPointerDown={(e) => e.stopPropagation()}
             className="absolute flex min-w-40 flex-col gap-1 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-            style={{ left: menuSquare.x + menuSquare.w / 2 + 8 + px(8), top: menuSquare.y - menuSquare.h / 2 }}
+            style={{
+              left: menuSquare.x + menuSquare.w / 2 + 8 + px(8),
+              top: menuSquare.y - menuSquare.h / 2,
+              zIndex: TOP_LAYER,
+            }}
           >
             <div className="flex gap-1.5 px-1 py-1">
               {TEXT_COLORS.map((color) => (
@@ -2333,6 +2624,7 @@ export function Board({
             >
               Text
             </button>
+            {layerButton(keyOf("square", menuSquare.id))}
             <LinkButton />
           </div>
         )}
@@ -2348,6 +2640,7 @@ export function Board({
               height: groupBox.maxY - groupBox.minY + px(12),
               borderWidth: px(1.5),
               borderColor: SELECT_BLUE,
+              zIndex: TOP_LAYER,
             }}
           />
         )}
@@ -2360,6 +2653,7 @@ export function Board({
               left: groupBox.maxX + px(12),
               top: groupBox.minY - px(6),
               transform: `scale(${1 / view.scale})`,
+              zIndex: TOP_LAYER,
             }}
           >
             <button
@@ -2486,4 +2780,52 @@ export function Board({
       )}
     </div>
   );
+}
+
+// Which line of a text has its first checkbox (-1: none).
+function firstBoxLine(text: string) {
+  return text.split("\n").findIndex((line) => {
+    const c = line.trimStart()[0];
+    return c === UNCHECKED || c === CHECKED;
+  });
+}
+
+// The text with its first checkbox set to `box`, or (with none) a box added
+// to the start of its first line.
+function withFirstBox(t: Text, box: string): Text {
+  const lines = t.text.split("\n");
+  let i = firstBoxLine(t.text);
+  const add = i === -1;
+  if (add) i = 0;
+  const indent = lines[i].match(/^ */)![0];
+  const at = lines.slice(0, i).join("\n").length + (i > 0 ? 1 : 0) + indent.length;
+  const text = add
+    ? t.text.slice(0, at) + box + " " + t.text.slice(at)
+    : t.text.slice(0, at) + box + t.text.slice(at + 1);
+  const runs =
+    t.runs &&
+    mergeRuns(
+      add
+        ? [...sliceRuns(t.runs, 0, at), { text: box + " " }, ...sliceRuns(t.runs, at)]
+        : [
+            ...sliceRuns(t.runs, 0, at),
+            { ...sliceRuns(t.runs, at, at + 1)[0], text: box },
+            ...sliceRuns(t.runs, at + 1),
+          ],
+    );
+  return { ...t, text, runs };
+}
+
+// A text as a task's words: its lines without checkboxes, bullets or numbers.
+function taskText(text: string) {
+  return text
+    .split("\n")
+    .map((line) =>
+      line
+        .trim()
+        .replace(new RegExp(`^(${UNCHECKED}|${CHECKED}|${BULLET}|\\d+\\.)\\s*`), "")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join(" ");
 }

@@ -6,6 +6,11 @@ export const MAX_CIRCLE = 2000;
 export const TEXT_SIZE = 24;
 export const MIN_TEXT = 6;
 export const MAX_TEXT = 800;
+// Pasted pictures: how big they start out at most, and at most can be.
+export const PICTURE_SIZE = 480;
+export const MAX_PICTURE = 6000;
+// Above everything on the board (menus, handles, guides), whatever the layers.
+export const TOP_LAYER = 1_000_000;
 export const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
 export const INK = "#1c1917";
 // Background fills a text (or highlighted words) can have. New texts have none.

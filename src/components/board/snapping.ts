@@ -3,8 +3,11 @@ import type { Key } from "./model";
 
 // A circle, square or text as a box, for snapping things in line. Lines
 // snap by their points (ends, bends and timeline marks) as zero-size boxes,
-// and only to other lines' points (`line: true`).
-export type SnapBox = { key: Key; x: number; y: number; w: number; h: number; line?: boolean };
+// and only to other lines' points (`line: true`). A line's middle (`mid`) is
+// a target only: a circle, square or text's centre snaps to it, across the
+// line ("x": a level line, so the text sits centred above or below it) or
+// along it ("y": an upright line).
+export type SnapBox = { key: Key; x: number; y: number; w: number; h: number; line?: boolean; mid?: "x" | "y" };
 export type Guide = { a: Point; b: Point };
 
 // How far to nudge things being dragged (by dx, dy) so an edge or middle of
@@ -18,8 +21,17 @@ export function snapBoxes(moving: SnapBox[], dx: number, dy: number, all: SnapBo
   const axis = (key: "x" | "y", size: "w" | "h", shift: number) => {
     let best: { delta: number; at: number } | null = null;
     for (const q of moving) {
+      if (q.mid) continue;
       const mine = lineOf({ ...q, [key]: q[key] + shift }, key, size);
       for (const o of others) {
+        // A line's middle: only centres snap to it, and only across the line.
+        if (o.mid) {
+          if (q.line || o.mid !== key) continue;
+          const delta = o[key] - mine[1];
+          if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta)))
+            best = { delta, at: o[key] };
+          continue;
+        }
         // Lines snap to lines; circles, squares and texts to each other.
         if (!!o.line !== !!q.line) continue;
         for (const target of lineOf(o, key, size)) {

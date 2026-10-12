@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { itemCount, mergeInto, mightBeSlow } from "@/components/board/merge";
-import { EMPTY_BOARD, type BoardData } from "@/components/board/model";
+import { fullBoard, type BoardData } from "@/components/board/model";
 import { UNTITLED_BOARD } from "@/lib/pages";
 import { createClient } from "@/lib/supabase/client";
 
@@ -56,7 +56,7 @@ export function MergeDialog({
     setError(null);
     try {
       const content = await getContent();
-      if (!content || itemCount({ ...EMPTY_BOARD, ...content }) === 0) {
+      if (!content || itemCount(fullBoard(content)) === 0) {
         setError(mode === "all" ? "There's nothing on this board to merge." : "Nothing is selected.");
         return;
       }
