@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { EMPTY_BOARD } from "@/components/board/model";
 
-// Make a new board and open it.
+// Make a new board and open it, ready to type its name.
 export async function createBoard() {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -13,7 +13,7 @@ export async function createBoard() {
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "Couldn't create the board");
-  redirect(`/board/${data.id}`);
+  redirect(`/board/${data.id}?new=1`);
 }
 
 // Log out and go back to the login page.

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Board } from "@/components/board/Board";
 import { EMPTY_BOARD, type BoardData, type Preset } from "@/components/board/model";
 import { createClient } from "@/lib/supabase/client";
@@ -13,6 +13,7 @@ export function BoardPage({
   id,
   title: initialTitle,
   showOpen = false,
+  isNew = false,
   loadedAt,
   initial,
   presets: initialPresets,
@@ -20,6 +21,8 @@ export function BoardPage({
   id: string;
   title: string;
   showOpen?: boolean;
+  // Just made: the cursor starts in the name box, ready to type.
+  isNew?: boolean;
   loadedAt: string;
   initial: BoardData;
   presets: Preset[];
@@ -30,6 +33,10 @@ export function BoardPage({
   const supabase = useMemo(createClient, []);
   const [openPanel, setOpenPanel] = useState(showOpen);
   useMarkOpened(id);
+  useEffect(() => {
+    // Drop "?new=1" so a reload doesn't count as new.
+    if (isNew) history.replaceState(null, "", location.pathname);
+  }, [isNew]);
 
   async function savePreset(data: BoardData) {
     // Named Preset 1, Preset 2, ... after the highest number so far.
@@ -69,10 +76,13 @@ export function BoardPage({
         <input
           value={title}
           placeholder="Untitled board"
+          autoFocus={isNew}
           onChange={(e) => {
             setTitle(e.target.value);
             save({ title: e.target.value });
           }}
+          // Enter finishes the name and goes back to the board.
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
           className="w-44 rounded px-1.5 py-0.5 outline-none focus:bg-stone-100"
         />
         <span

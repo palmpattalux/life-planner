@@ -10,10 +10,10 @@ export default async function Page({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ open?: string }>;
+  searchParams: Promise<{ open?: string; new?: string }>;
 }) {
   const { id } = await params;
-  const { open } = await searchParams;
+  const { open, new: isNew } = await searchParams;
   if (!isPageId(id)) notFound();
   const { supabase } = await requireUser();
   const [page, presets] = await Promise.all([
@@ -38,6 +38,7 @@ export default async function Page({
       title={page.data.title}
       loadedAt={page.data.updated_at}
       showOpen={open === "1"}
+      isNew={isNew === "1"}
       initial={page.data.content as BoardData}
       presets={presets.data!.map((p) => ({ id: p.id, name: p.name, data: p.content as BoardData }) satisfies Preset)}
     />

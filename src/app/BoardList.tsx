@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { BoardData } from "@/components/board/model";
 import { createBoard } from "./actions";
 import { BoardPreview } from "./BoardPreview";
+import { TornPaper } from "./TornPaper";
 
 export type Project = { id: string; title: string; deleted_at: string | null; content?: BoardData };
 
@@ -33,15 +34,6 @@ function tileLayout(n: number, w: number, h: number) {
   const tw = (w - (cols - 1) * GAP) / cols;
   return { cols, tw, th: tw };
 }
-
-// The torn edge of the paper behind a board's name on Home: jagged along the
-// bottom and left, as a clip-path.
-const TORN = (() => {
-  const jag = [0, 5, 2, 7, 1, 4, 8, 3, 6, 1, 5, 9, 2, 6, 3, 7, 0];
-  const bottom = jag.map((d, i) => `${100 - (i * 100) / (jag.length - 1)}% calc(100% - ${d}px)`);
-  const left = jag.slice(1, -1).map((d, i) => `${d}px ${100 - ((i + 1) * 100) / (jag.length - 1)}%`);
-  return `polygon(0 0, 100% 0, ${[...bottom, ...left].join(", ")})`;
-})();
 
 // Every board (and the trash), loaded once and shared by the boxes and
 // anything else showing them, like the trash in Home's menu.
@@ -180,13 +172,7 @@ export function BoardList({
                     <Link href={`/board/${p.id}`} className="absolute inset-0">
                       <BoardPreview data={p.content ?? null} />
                       {/* The name, on a torn scrap of paper in the top right corner. */}
-                      <span
-                        data-project-title
-                        className="absolute right-0 top-0 max-w-[75%] truncate bg-[#f4efe4] pb-4 pl-5 pr-3 pt-2 text-sm font-medium text-stone-800"
-                        style={{ clipPath: TORN }}
-                      >
-                        {p.title || UNTITLED_BOARD}
-                      </span>
+                      <TornPaper seed={p.id}>{p.title || UNTITLED_BOARD}</TornPaper>
                     </Link>
                     <div className="absolute bottom-2 right-2 hidden gap-1 group-hover:flex">
                       <button onClick={() => remove(p)} className={button}>
