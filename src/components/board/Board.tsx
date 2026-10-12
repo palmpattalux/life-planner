@@ -13,6 +13,7 @@ import {
   INK,
   LINE_LABEL_SIZE,
   MAJOR_TICK,
+  NOW_RED,
   MAX_CIRCLE,
   MAX_PICTURE,
   MAX_SCALE,
@@ -85,7 +86,7 @@ import {
 import { BULLET, isPlain, mergeRuns, runLines, setListKind, sliceRuns, type ListKind, type Run } from "./richText";
 import { SIDE_MENU_W, SideMenu } from "./SideMenu";
 import { TextEditor } from "./TextEditor";
-import { subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
+import { nowAlong, subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
 
 type View = { x: number; y: number; scale: number };
 // The room (in board units) one smaller step of a stretched timeline needs
@@ -190,6 +191,14 @@ export function Board({
   } | null>(null);
   // The pinned mark whose box (bold, colours) is showing.
   const [pinMenu, setPinMenu] = useState<{ lineId: number; value: string } | null>(null);
+  // This moment, for the "Now" arrow on timelines (kept up to the minute),
+  // and the timeline whose arrow is showing the word "Now".
+  const [now, setNow] = useState(() => new Date());
+  const [nowShown, setNowShown] = useState<number | null>(null);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
   // The angle point clicked on the selected line; Backspace / Delete removes it.
   const [selectedBend, setSelectedBend] = useState<{ lineId: number; index: number } | null>(null);
   const selectedBendRef = useRef(selectedBend);
@@ -1726,6 +1735,63 @@ export function Board({
     return [...main, ...subs];
   }
 
+  // A small arrow at today's date on a timeline, on the side away from the
+  // labels (drawn above the line so it can be hovered). Hovering or pressing
+  // it shows "Now".
+  function nowArrow(l: Line, pts: Point[]) {
+    const f = l.time ? nowAlong(l.time, now) : null;
+    if (f === null) return null;
+    const { p, dir } = pointAlong(pts, f * (polylineLength(pts) || 1));
+    let nx = dir.y;
+    let ny = -dir.x;
+    if (ny > 0 || (ny === 0 && nx > 0)) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const tip = 3;
+    const size = 8;
+    const back = { x: p.x + nx * (tip + size), y: p.y + ny * (tip + size) };
+    const shown = nowShown === l.id;
+    return (
+      <g
+        data-now={l.id}
+        style={{ pointerEvents: "auto", cursor: "pointer" }}
+        onPointerEnter={(e) => e.pointerType === "mouse" && setNowShown(l.id)}
+        onPointerLeave={(e) => e.pointerType === "mouse" && setNowShown(null)}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          setNowShown(shown && e.pointerType !== "mouse" ? null : l.id);
+        }}
+      >
+        <circle cx={back.x} cy={back.y} r={size} fill="transparent" />
+        <polygon
+          points={[
+            [p.x + nx * tip, p.y + ny * tip],
+            [back.x - dir.x * (size / 2), back.y - dir.y * (size / 2)],
+            [back.x + dir.x * (size / 2), back.y + dir.y * (size / 2)],
+          ]
+            .map((q) => q.join(","))
+            .join(" ")}
+          fill={NOW_RED}
+        />
+        {shown && (
+          <text
+            data-now-label
+            x={back.x + nx * TICK_LABEL_SIZE}
+            y={back.y + ny * TICK_LABEL_SIZE}
+            fontSize={TICK_LABEL_SIZE}
+            fontWeight={700}
+            fill={NOW_RED}
+            textAnchor="middle"
+            dominantBaseline="middle"
+          >
+            Now
+          </text>
+        )}
+      </g>
+    );
+  }
+
   // Circles, squares, pictures and texts, back to front: by layer, and
   // otherwise in that order. (Lines are always underneath them.)
   const layered = [
@@ -1913,6 +1979,7 @@ export function Board({
                       startDrag(e, "line", l.id);
                     }}
                   />
+                  {nowArrow(l, pts)}
                 </g>
               );
             })}

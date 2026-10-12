@@ -105,3 +105,38 @@ export function timelineLabels(t: Timeline): string[] | null {
   if (t.startSub === undefined && t.endSub === undefined) return timelineTicks(t);
   return [fullLabel(t.unit, t.start, t.startSub ?? 0), fullLabel(t.unit, t.end, t.endSub ?? 0)];
 }
+
+// How far along a timeline (0 at its start, 1 at its end) this moment is, on
+// this device's clock; null when it's not on the timeline. Each unit is read
+// as the timeline's labels are: days and weeks within this month (weeks run
+// Monday to Sunday, W1 being the one with the 1st), months within this year,
+// and years.
+export function nowAlong(t: Timeline, now: Date): number | null {
+  const dayLength = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const hours = now.getHours() + now.getMinutes() / 60;
+  const date = now.getDate() - 1 + hours / 24; // days since the 1st
+  const firstWeekday = (new Date(now.getFullYear(), now.getMonth(), 1).getDay() + 6) % 7; // Monday 0
+  const at: Record<TimeUnit, number> = {
+    day: now.getDate() + hours / 24,
+    week: 1 + (firstWeekday + date) / 7,
+    month: now.getMonth() + 1 + date / dayLength,
+    year: now.getFullYear() + (now.getMonth() + date / dayLength) / 12,
+  };
+  // Where the ends are, counting the smaller step a phase may start or end on.
+  const end = (value: string, sub?: number) => {
+    const n = toNumber(t.unit, value);
+    return n === null ? null : n + (sub ?? 0) / subSteps(t.unit, value).length;
+  };
+  const a = end(t.start, t.startSub);
+  let b = end(t.end, t.endSub);
+  if (a === null || b === null || !timelineLabels(t)) return null;
+  let x = at[t.unit];
+  // Months can wrap round the year (Nov to Feb).
+  if (t.unit === "month" && b <= a) {
+    b += 12;
+    if (x < a) x += 12;
+  }
+  if (b <= a) return null;
+  const f = (x - a) / (b - a);
+  return f >= 0 && f <= 1 ? f : null;
+}
