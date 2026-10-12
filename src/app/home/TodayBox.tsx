@@ -3,7 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckMark } from "@/components/board/icons";
 import { INK } from "@/components/board/constants";
-import { loadPastDays, loadToday, parseDate, saveDay, setLinkDone, today, type Day } from "@/lib/planner";
+import {
+  loadDay,
+  loadPastDays,
+  loadToday,
+  parseDate,
+  saveDay,
+  setLinkDone,
+  today,
+  tomorrow,
+  type Day,
+} from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
 import { Checklist } from "./Checklist";
 import { useSaved } from "./useSaved";
@@ -11,7 +21,9 @@ import { useSaved } from "./useSaved";
 const box = "rounded-2xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.08)]";
 
 // Today's to-do list. A new, empty list starts every day; each day's list is
-// kept with its date (see "View past to-do days") for 30 days.
+// kept with its date (see Past to-dos) for 30 days. The Tomorrow switch shows
+// tomorrow's list instead, to write ahead (the box glows like sunlight); at
+// midnight it becomes today's.
 export function TodayBox() {
   const supabase = useMemo(createClient, []);
   const { value, change, failed, refresh } = useSaved<Day>(
@@ -19,6 +31,13 @@ export function TodayBox() {
     async () => ({ day: today(), items: await loadToday(supabase) }),
     (d) => saveDay(supabase, d.day, d.items),
   );
+  const next = useSaved<Day>(
+    "tomorrow",
+    async () => ({ day: tomorrow(), items: await loadDay(supabase, tomorrow()) }),
+    (d) => saveDay(supabase, d.day, d.items),
+  );
+  const [ahead, setAhead] = useState(false);
+  const shown = ahead ? next : { value, change, failed };
   const [focus, setFocus] = useState(0);
   // At midnight (this device's time zone) today's list is saved under its
   // date, so it's in Past to-dos, and a new empty list starts.
@@ -29,6 +48,7 @@ export function TodayBox() {
       const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
       timer = setTimeout(async () => {
         await refresh();
+        await next.refresh();
         if (showPastRef.current) void loadPastDays(supabase).then(setPast, () => {});
         schedule();
       }, midnight.getTime() - now.getTime());
@@ -52,43 +72,67 @@ export function TodayBox() {
   return (
     <section
       data-today
-      className={`${box} group cursor-text`}
+      data-tomorrow-on={ahead || undefined}
+      className={`${box} group cursor-text transition-shadow duration-500 ${ahead ? "bg-gradient-to-br from-amber-50 to-orange-50" : ""}`}
+      // Tomorrow: a warm glow, like sunlight.
+      style={ahead ? { boxShadow: "0 0 0 1.5px rgba(251,191,36,0.6), 0 0 30px 8px rgba(251,146,60,0.4)" } : undefined}
       // Clicking anywhere in the box starts typing.
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest("button, input")) setFocus((n) => n + 1);
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold">Today&apos;s to-do</h2>
-        {/* Past to-dos (each day's list, kept 30 days). */}
-        <button
-          type="button"
-          data-view-past
-          aria-label="Past to-dos"
-          title="Past to-dos"
-          aria-pressed={showPast}
-          onClick={togglePast}
-          className={`rounded-md p-1 transition ${showPast ? "bg-stone-900 text-white" : "text-stone-400 hover:bg-stone-100 hover:text-stone-800"}`}
-        >
-          <ArchiveIcon />
-        </button>
+        <h2 className="whitespace-nowrap font-semibold">{ahead ? "Tomorrow's to-do" : "Today's to-do"}</h2>
+        <div className="flex items-center gap-1.5">
+          {/* Switch to tomorrow's list and back. */}
+          <button
+            type="button"
+            role="switch"
+            data-tomorrow
+            aria-checked={ahead}
+            onClick={() => setAhead((a) => !a)}
+            className={`flex items-center gap-1.5 rounded-full py-0.5 pl-1 pr-0.5 text-[11px] transition ${ahead ? "text-orange-700" : "text-stone-500 hover:text-stone-800"}`}
+          >
+            Tomorrow
+            <span
+              className={`relative h-4 w-7 rounded-full transition-colors ${ahead ? "bg-orange-400" : "bg-stone-300"}`}
+            >
+              <span
+                className={`absolute top-0.5 size-3 rounded-full bg-white shadow transition-all ${ahead ? "left-3.5" : "left-0.5"}`}
+              />
+            </span>
+          </button>
+          {/* Past to-dos (each day's list, kept 30 days). */}
+          <button
+            type="button"
+            data-view-past
+            aria-label="Past to-dos"
+            title="Past to-dos"
+            aria-pressed={showPast}
+            onClick={togglePast}
+            className={`rounded-md p-1 transition ${showPast ? "bg-stone-900 text-white" : "text-stone-400 hover:bg-stone-100 hover:text-stone-800"}`}
+          >
+            <ArchiveIcon />
+          </button>
+        </div>
       </div>
       {/* Only while the pointer is over the box (or typing in it, on a phone). */}
       <p className="h-0 overflow-hidden text-xs text-stone-400 opacity-0 transition-all group-focus-within:h-4 group-focus-within:opacity-100 group-hover:h-4 group-hover:opacity-100">
-        This automatically resets every day
+        {ahead ? "This becomes today's to-do at midnight" : "This automatically resets every day"}
       </p>
       <div className="mb-2" />
-      {value === null ? (
-        <p className="py-1 text-sm text-stone-400">{failed ? "Couldn't load your list." : "Loading…"}</p>
+      {shown.value === null ? (
+        <p className="py-1 text-sm text-stone-400">{shown.failed ? "Couldn't load your list." : "Loading…"}</p>
       ) : (
         <Checklist
-          tasks={value.items}
-          onChange={(items) => change({ ...value, items })}
+          key={ahead ? "tomorrow" : "today"}
+          tasks={shown.value.items}
+          onChange={(items) => shown.change({ ...shown.value!, items })}
           onCheck={(t, done) => t.link && void setLinkDone(supabase, t.link, done).catch(() => {})}
           focusRequest={focus}
         />
       )}
-      {failed && value !== null && (
+      {shown.failed && shown.value !== null && (
         <p className="mt-1 text-xs text-red-600">Couldn&apos;t save. Check your connection.</p>
       )}
       {showPast && (

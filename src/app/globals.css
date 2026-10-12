@@ -36,6 +36,8 @@ html[data-theme="dark"] {
   --color-red-50: #3f2622;
   --color-red-600: #f87171;
   --color-amber-50: #3d321c;
+  --color-orange-50: #3d2a1c;
+  --color-orange-700: #fdba74;
   --color-amber-800: #fcd34d;
   --color-emerald-700: #6ee7b7;
 }

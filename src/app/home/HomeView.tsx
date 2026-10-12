@@ -50,7 +50,11 @@ export function HomeView({ email }: { email?: string }) {
         <AccountMenu boards={boards} />
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-6 px-5 pb-16 xl:grid xl:grid-cols-[18rem_1fr_18rem] xl:gap-5">
-        <aside data-planner className="flex w-full flex-col gap-4 sm:max-w-sm xl:max-w-none xl:overflow-y-auto xl:pb-4">
+        {/* Padded (and pulled back out) so the to-do box's Tomorrow glow isn't cut off. */}
+        <aside
+          data-planner
+          className="flex w-full flex-col gap-4 sm:max-w-sm xl:-mx-4 xl:-mt-4 xl:w-auto xl:max-w-none xl:overflow-y-auto xl:p-4"
+        >
           <TodayBox />
           <PhaseBox phase={phase.value} onChange={phase.change} />
           {phase.failed && (

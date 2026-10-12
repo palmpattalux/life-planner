@@ -23,6 +23,11 @@ export function localDate(d: Date) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 export const today = () => localDate(new Date());
+export const tomorrow = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return localDate(d);
+};
 // "YYYY-MM-DD" as a local date.
 export const parseDate = (s: string) => {
   const [y, m, d] = s.split("-").map(Number);
@@ -43,8 +48,11 @@ async function withLinkStates(sb: SupabaseClient, tasks: Task[]): Promise<Task[]
   return tasks.map((t) => (t.link && done.has(t.link) ? { ...t, done: done.get(t.link)! } : t));
 }
 
-export async function loadToday(sb: SupabaseClient): Promise<Task[]> {
-  const { data, error } = await sb.from("todo_days").select("items").eq("day", today()).maybeSingle();
+export const loadToday = (sb: SupabaseClient) => loadDay(sb, today());
+
+// One day's to-do list ("YYYY-MM-DD"), e.g. tomorrow's, made ahead of time.
+export async function loadDay(sb: SupabaseClient, day: string): Promise<Task[]> {
+  const { data, error } = await sb.from("todo_days").select("items").eq("day", day).maybeSingle();
   if (error) throw error;
   return withLinkStates(sb, (data?.items as Task[]) ?? []);
 }
