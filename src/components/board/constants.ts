@@ -8,6 +8,8 @@ export const MIN_TEXT = 6;
 export const MAX_TEXT = 800;
 export const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
 export const INK = "#1c1917";
+// Background fills a text (or highlighted words) can have. New texts have none.
+export const TEXT_FILLS = ["#fef08a", "#fed7aa", "#bbf7d0", "#bfdbfe", "#e9d5ff", "#fbcfe8", "#e7e5e4"];
 export const SELECT_BLUE = "#3b82f6";
 export const SNAP_PINK = "#ec4899";
 // Checklist boxes are stored as these characters at the start of a text line.

@@ -30,6 +30,7 @@ import {
   SNAP_PINK,
   squareLabelSize,
   TEXT_COLORS,
+  TEXT_FILLS,
   TEXT_SIZE,
   TICK,
   TICK_LABEL_GAP,
@@ -75,7 +76,7 @@ import {
   type Square,
   type Text,
 } from "./model";
-import { isPlain, mergeRuns, runLines, sliceRuns, type Run } from "./richText";
+import { BULLET, isPlain, mergeRuns, runLines, setListKind, sliceRuns, type ListKind, type Run } from "./richText";
 import { SIDE_MENU_W, SideMenu } from "./SideMenu";
 import { TextEditor } from "./TextEditor";
 import { subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
@@ -592,11 +593,16 @@ export function Board({
     }
     for (const t of data.texts) if (tIds.has(t.id)) f = clamp(t.fontSize * f, MIN_TEXT, MAX_TEXT) / t.fontSize;
     const scalePt = (p: Point) => (single ? p : { x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f });
+    // A text resized on its own keeps its left edge where it is, so it never
+    // needs lining up again.
+    // (The text starts 4 units in from its box: its px-1 padding.)
+    const left = box.minX + 4;
+    const textAt = (t: Text) => (single ? { x: left + (t.x - left) * f, y: t.y } : scalePt(t));
 
     setBoard((b) => ({
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, ...scalePt(c), size: c.size * f } : c)),
       squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, ...scalePt(q), w: q.w * f, h: q.h * f } : q)),
-      texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, ...scalePt(t), fontSize: t.fontSize * f } : t)),
+      texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, ...textAt(t), fontSize: t.fontSize * f } : t)),
       lines: b.lines.map((l) =>
         lIds.has(l.id)
           ? {
@@ -1200,9 +1206,16 @@ export function Board({
     setEditing(id);
   }
 
-  // Start a checklist or numbered list on the line after the text.
-  function startList(t: Text, marker: string) {
-    startEditing(t.id, t.text ? `\n${marker}` : marker);
+  // The text menu's list buttons: every line of the text becomes a numbered
+  // list, bullet points or a checklist (or back to plain lines if it already
+  // is one). An empty text starts typing the first line.
+  function makeList(t: Text, kind: ListKind) {
+    if (!t.text) {
+      startEditing(t.id, kind === "number" ? "1. " : kind === "bullet" ? `${BULLET} ` : `${UNCHECKED} `);
+      return;
+    }
+    const runs = setListKind(t.runs ?? [{ text: t.text }], 0, t.text.split("\n").length - 1, kind, UNCHECKED);
+    updateText(t.id, { text: runs.map((r) => r.text).join(""), runs: isPlain(runs) ? undefined : runs });
   }
 
   // Tick or untick the checklist box on one line of a text.
@@ -1848,6 +1861,7 @@ export function Board({
             color: t.color,
             fontWeight: t.bold ? 700 : 400,
             lineHeight: 1.2,
+            background: t.bg,
           };
           return (
             <div key={t.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: t.x, top: t.y }}>
@@ -1864,7 +1878,7 @@ export function Board({
                   data-text={t.id}
                   onPointerDown={(e) => startDrag(e, "text", t.id)}
                   onDoubleClick={() => startEditing(t.id)}
-                  className="cursor-grab whitespace-pre bg-white px-1 active:cursor-grabbing"
+                  className="cursor-grab whitespace-pre px-1 active:cursor-grabbing"
                   style={{
                     ...style,
                     boxShadow: inGroup ? `0 0 0 ${px(2)}px rgb(59 130 246 / 0.35)` : undefined,
@@ -1908,6 +1922,7 @@ export function Board({
                               fontSize: r.scale ? `${r.scale}em` : undefined,
                               fontWeight: r.bold === undefined ? undefined : r.bold ? 700 : 400,
                               color: r.color,
+                              backgroundColor: r.bg,
                             }}
                           >
                             {r.text}
@@ -1950,24 +1965,48 @@ export function Board({
                   <div className="flex gap-1">
                     <button
                       aria-label="Checklist"
-                      onClick={() => startList(t, `${UNCHECKED} `)}
+                      onClick={() => makeList(t, "check")}
                       className="flex items-center rounded px-2 py-1 hover:bg-stone-100"
                     >
                       <ChecklistIcon />
                     </button>
                     <button
-                      onClick={() => startList(t, "1. ")}
+                      aria-label="Bullet points"
+                      onClick={() => makeList(t, "bullet")}
+                      className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                    >
+                      {BULLET}
+                    </button>
+                    <button
+                      onClick={() => makeList(t, "number")}
                       className="rounded px-2 py-1 text-sm hover:bg-stone-100"
                     >
                       1.2.3.
                     </button>
                   </div>
-                  <button
-                    onClick={() => updateText(t.id, { bold: !t.bold })}
-                    className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
-                  >
-                    Bold
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => updateText(t.id, { bold: !t.bold })}
+                      className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                    >
+                      Bold
+                    </button>
+                    {/* Background fill for the whole text (none to start with). */}
+                    <button
+                      aria-label="No fill"
+                      onClick={() => updateText(t.id, { bg: undefined })}
+                      className={`size-5 rounded border border-stone-300 bg-[linear-gradient(135deg,transparent_45%,#d6d3d1_45%,#d6d3d1_55%,transparent_55%)] ${t.bg ? "" : "ring-2 ring-stone-400 ring-offset-1"}`}
+                    />
+                    {TEXT_FILLS.map((fill) => (
+                      <button
+                        key={fill}
+                        aria-label={`Fill ${fill}`}
+                        onClick={() => updateText(t.id, { bg: fill })}
+                        className={`size-5 rounded border border-stone-200 ${t.bg === fill ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                        style={{ background: fill }}
+                      />
+                    ))}
+                  </div>
                   <LinkButton />
                 </div>
               )}

@@ -9,7 +9,7 @@ import type { BoardData } from "@/components/board/model";
 import { createBoard } from "./actions";
 import { BoardPreview } from "./BoardPreview";
 
-type Project = { id: string; title: string; deleted_at: string | null; content?: BoardData };
+export type Project = { id: string; title: string; deleted_at: string | null; content?: BoardData };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GAP = 12;
@@ -34,34 +34,21 @@ function tileLayout(n: number, w: number, h: number) {
   return { cols, tw, th: tw };
 }
 
-// Every board, as boxes that share out the space they're given (the more
-// boards, the smaller each box). Hovering a board shows Remove (to the trash
-// for 30 days) and Duplicate. Used by the "Open?" box and the Home page.
-// `currentId` is the board open right now, if any; clicking it calls
-// `onOpenCurrent` instead of reloading it. `home`: the bare Home look, with
-// no dividers, boxes that pop and a blurred picture of each board.
-export function BoardList({
-  currentId,
-  onOpenCurrent,
-  home = false,
-}: {
-  currentId?: string;
-  onOpenCurrent?: () => void;
-  home?: boolean;
-}) {
+// The torn edge of the paper behind a board's name on Home: jagged along the
+// bottom and left, as a clip-path.
+const TORN = (() => {
+  const jag = [0, 5, 2, 7, 1, 4, 8, 3, 6, 1, 5, 9, 2, 6, 3, 7, 0];
+  const bottom = jag.map((d, i) => `${100 - (i * 100) / (jag.length - 1)}% calc(100% - ${d}px)`);
+  const left = jag.slice(1, -1).map((d, i) => `${d}px ${100 - ((i + 1) * 100) / (jag.length - 1)}%`);
+  return `polygon(0 0, 100% 0, ${[...bottom, ...left].join(", ")})`;
+})();
+
+// Every board (and the trash), loaded once and shared by the boxes and
+// anything else showing them, like the trash in Home's menu.
+export function useBoards({ withContent = false, currentId }: { withContent?: boolean; currentId?: string } = {}) {
   const supabase = useMemo(createClient, []);
   const router = useRouter();
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [showTrash, setShowTrash] = useState(false);
-  // The space the board boxes fill.
-  const areaRef = useRef<HTMLDivElement>(null);
-  const [area, setArea] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    const el = areaRef.current!;
-    const observer = new ResizeObserver(() => setArea({ w: el.clientWidth, h: el.clientHeight }));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   async function load() {
     // Anything in the trash longer than 30 days is deleted for good.
@@ -71,7 +58,7 @@ export function BoardList({
       .lt("deleted_at", new Date(Date.now() - TRASH_DAYS * DAY_MS).toISOString());
     const { data } = await supabase
       .from("pages")
-      .select(home ? "id, title, deleted_at, content" : "id, title, deleted_at")
+      .select(withContent ? "id, title, deleted_at, content" : "id, title, deleted_at")
       .eq("kind", "board")
       .is("parent_id", null)
       .order("opened_at", { ascending: false, nullsFirst: false })
@@ -104,11 +91,71 @@ export function BoardList({
     void load();
   }
 
-  const live = projects?.filter((p) => !p.deleted_at) ?? [];
-  const trash = projects?.filter((p) => p.deleted_at) ?? [];
-  const daysLeft = (p: Project) =>
-    Math.max(0, Math.ceil(TRASH_DAYS - (Date.now() - new Date(p.deleted_at!).getTime()) / DAY_MS));
+  // Delete everything in the trash for good.
+  async function emptyTrash() {
+    await supabase.from("pages").delete().eq("kind", "board").not("deleted_at", "is", null);
+    void load();
+  }
 
+  return {
+    projects,
+    live: projects?.filter((p) => !p.deleted_at) ?? [],
+    trash: projects?.filter((p) => p.deleted_at) ?? [],
+    remove,
+    restore,
+    duplicate,
+    emptyTrash,
+  };
+}
+export type Boards = ReturnType<typeof useBoards>;
+
+export const daysLeft = (p: Project) =>
+  Math.max(0, Math.ceil(TRASH_DAYS - (Date.now() - new Date(p.deleted_at!).getTime()) / DAY_MS));
+
+// The boards in the trash, each with its days left and Restore.
+export function TrashList({ boards }: { boards: Boards }) {
+  return boards.trash.map((p) => (
+    <div key={p.id} data-trashed={p.id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+      <span className="min-w-0 flex-1 truncate text-stone-500">{p.title || UNTITLED_BOARD}</span>
+      <span className="shrink-0 text-xs text-stone-400">{daysLeft(p)} days left</span>
+      <button onClick={() => boards.restore(p)} className="shrink-0 rounded px-2 py-1 text-xs hover:bg-stone-100">
+        Restore
+      </button>
+    </div>
+  ));
+}
+
+// Every board, as boxes that share out the space they're given (the more
+// boards, the smaller each box). Hovering a board shows Remove (to the trash
+// for 30 days) and Duplicate. Used by the "Open?" box and the Home page.
+// `currentId` is the board open right now, if any; clicking it calls
+// `onOpenCurrent` instead of reloading it. `home`: the bare Home look, with
+// no dividers, boxes that pop, a blurred picture of each board, its name on
+// torn paper in the top right corner, and no trash (that's in Home's menu).
+export function BoardList({
+  boards,
+  currentId,
+  onOpenCurrent,
+  home = false,
+}: {
+  boards: Boards;
+  currentId?: string;
+  onOpenCurrent?: () => void;
+  home?: boolean;
+}) {
+  const { projects, live, trash, remove, duplicate } = boards;
+  const [showTrash, setShowTrash] = useState(false);
+  // The space the board boxes fill.
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [area, setArea] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = areaRef.current!;
+    const observer = new ResizeObserver(() => setArea({ w: el.clientWidth, h: el.clientHeight }));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const button = "rounded bg-white px-2 py-1 text-xs shadow-sm hover:bg-stone-100";
   return (
     <>
       {/* On Home the padding leaves room for a box's lift and shadow. */}
@@ -122,67 +169,74 @@ export function BoardList({
             : tileLayout(live.length, area.w - 40, area.h - 20);
           return (
             <div className="grid" style={{ gridTemplateColumns: `repeat(${cols}, ${tw}px)`, gap: GAP }}>
-              {live.map((p) => (
-                <div
-                  key={p.id}
-                  data-project={p.id}
-                  className={
-                    home
-                      ? "group relative overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.08)] transition duration-200 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-[0_10px_20px_rgba(0,0,0,0.12)] active:scale-[0.98]"
-                      : `group relative rounded-xl border-2 bg-stone-50 hover:border-stone-400 ${p.id === currentId ? "border-stone-900" : "border-stone-200"}`
-                  }
-                  style={{ height: th }}
-                >
-                  <Link
-                    href={`/board/${p.id}`}
-                    onClick={p.id === currentId ? onOpenCurrent : undefined}
-                    className={`relative flex size-full flex-col items-center gap-1 overflow-hidden p-3 text-center ${home ? "justify-end" : "justify-center"}`}
+              {live.map((p) =>
+                home ? (
+                  <div
+                    key={p.id}
+                    data-project={p.id}
+                    className="group relative overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.08)] transition duration-200 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-[0_10px_20px_rgba(0,0,0,0.12)] active:scale-[0.98]"
+                    style={{ height: th }}
                   >
-                    {home && <BoardPreview data={p.content ?? null} />}
-                    <span className={`relative font-medium ${home ? "line-clamp-1 text-sm" : "line-clamp-3"}`}>
-                      {p.title || UNTITLED_BOARD}
-                    </span>
-                    {p.id === currentId && <span className="text-xs text-stone-400">open now</span>}
-                  </Link>
-                  <div className="absolute right-2 top-2 hidden gap-1 group-hover:flex">
-                    <button
-                      onClick={() => remove(p)}
-                      className="rounded bg-white px-2 py-1 text-xs shadow-sm hover:bg-stone-100"
-                    >
-                      Remove
-                    </button>
-                    <button
-                      onClick={() => duplicate(p)}
-                      className="rounded bg-white px-2 py-1 text-xs shadow-sm hover:bg-stone-100"
-                    >
-                      Duplicate
-                    </button>
+                    <Link href={`/board/${p.id}`} className="absolute inset-0">
+                      <BoardPreview data={p.content ?? null} />
+                      {/* The name, on a torn scrap of paper in the top right corner. */}
+                      <span
+                        data-project-title
+                        className="absolute right-0 top-0 max-w-[75%] truncate bg-[#f4efe4] pb-4 pl-5 pr-3 pt-2 text-sm font-medium text-stone-800"
+                        style={{ clipPath: TORN }}
+                      >
+                        {p.title || UNTITLED_BOARD}
+                      </span>
+                    </Link>
+                    <div className="absolute bottom-2 right-2 hidden gap-1 group-hover:flex">
+                      <button onClick={() => remove(p)} className={button}>
+                        Remove
+                      </button>
+                      <button onClick={() => duplicate(p)} className={button}>
+                        Duplicate
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div
+                    key={p.id}
+                    data-project={p.id}
+                    className={`group relative rounded-xl border-2 bg-stone-50 hover:border-stone-400 ${p.id === currentId ? "border-stone-900" : "border-stone-200"}`}
+                    style={{ height: th }}
+                  >
+                    <Link
+                      href={`/board/${p.id}`}
+                      onClick={p.id === currentId ? onOpenCurrent : undefined}
+                      className="relative flex size-full flex-col items-center justify-center gap-1 overflow-hidden p-3 text-center"
+                    >
+                      <span className="line-clamp-3 font-medium">{p.title || UNTITLED_BOARD}</span>
+                      {p.id === currentId && <span className="text-xs text-stone-400">open now</span>}
+                    </Link>
+                    <div className="absolute right-2 top-2 hidden gap-1 group-hover:flex">
+                      <button onClick={() => remove(p)} className={button}>
+                        Remove
+                      </button>
+                      <button onClick={() => duplicate(p)} className={button}>
+                        Duplicate
+                      </button>
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
           );
         })()}
       </div>
 
-      {trash.length > 0 && (
-        <div className={`max-h-48 overflow-y-auto px-3 py-2 ${home ? "" : "border-t border-stone-200"}`}>
+      {!home && trash.length > 0 && (
+        <div className="max-h-48 overflow-y-auto border-t border-stone-200 px-3 py-2">
           <button
             onClick={() => setShowTrash((t) => !t)}
             className="px-2 py-1 text-sm text-stone-500 hover:text-stone-900"
           >
             Trash ({trash.length}) {showTrash ? "▾" : "▸"}
           </button>
-          {showTrash &&
-            trash.map((p) => (
-              <div key={p.id} data-trashed={p.id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
-                <span className="min-w-0 flex-1 truncate text-stone-500">{p.title || UNTITLED_BOARD}</span>
-                <span className="shrink-0 text-xs text-stone-400">{daysLeft(p)} days left</span>
-                <button onClick={() => restore(p)} className="shrink-0 rounded px-2 py-1 text-xs hover:bg-stone-100">
-                  Restore
-                </button>
-              </div>
-            ))}
+          {showTrash && <TrashList boards={boards} />}
         </div>
       )}
 

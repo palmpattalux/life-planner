@@ -2,12 +2,13 @@
 
 import { useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { BoardList } from "./BoardList";
+import { BoardList, useBoards } from "./BoardList";
 
 // The "Open?" box on the right third of the screen, showing every board, so
 // it's one click to switch away from the one that opened by itself. Clicking
 // anywhere else or the x closes it.
 export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: () => void }) {
+  const boards = useBoards({ currentId });
   useEffect(() => {
     // Opened by itself (from the address): drop "?open=1" so a reload doesn't reopen it.
     if (new URLSearchParams(location.search).has("open")) history.replaceState(null, "", location.pathname);
@@ -27,7 +28,7 @@ export function OpenPanel({ currentId, onClose }: { currentId: string; onClose: 
             ✕
           </button>
         </div>
-        <BoardList currentId={currentId} onOpenCurrent={onClose} />
+        <BoardList boards={boards} currentId={currentId} onOpenCurrent={onClose} />
       </aside>
     </>
   );

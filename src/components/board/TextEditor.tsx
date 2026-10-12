@@ -1,33 +1,62 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { INDENT, TEXT_COLORS, UNCHECKED } from "./constants";
-import { domToRuns, runsToDom, scaleSelection, type Run } from "./richText";
+import { INDENT, TEXT_COLORS, TEXT_FILLS, UNCHECKED } from "./constants";
+import { ChecklistIcon } from "./icons";
+import { BULLET, domToRuns, runsToDom, setListKind, type ListKind, type Run } from "./richText";
+
+// The editor's text from its start up to this point (line breaks as "\n").
+function textUpTo(el: HTMLElement, node: Node, offset: number): string {
+  const range = document.createRange();
+  range.setStart(el, 0);
+  range.setEnd(node, offset);
+  let text = "";
+  const walk = (n: Node) => {
+    if (n.nodeType === Node.TEXT_NODE) text += n.textContent;
+    else if (n.nodeName === "BR") text += "\n";
+    else n.childNodes.forEach(walk);
+  };
+  walk(range.cloneContents());
+  return text;
+}
 
 // The text typed so far on the caret's line, up to the caret.
 function textBeforeCaret(el: HTMLElement): string {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return "";
-  const range = document.createRange();
-  range.setStart(el, 0);
-  range.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
-  let text = "";
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) text += node.textContent;
-    else if (node.nodeName === "BR") text += "\n";
-    else node.childNodes.forEach(walk);
-  };
-  walk(range.cloneContents());
+  const text = textUpTo(el, sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
   return text.slice(text.lastIndexOf("\n") + 1);
+}
+
+// The place in the editor `n` characters in (line breaks count as one).
+function pointAt(el: HTMLElement, n: number): { node: Node; offset: number } {
+  let left = n;
+  let found: { node: Node; offset: number } | null = null;
+  const walk = (node: Node) => {
+    if (found) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const len = node.textContent?.length ?? 0;
+      if (left <= len) found = { node, offset: left };
+      else left -= len;
+    } else if (node.nodeName === "BR") {
+      const parent = node.parentNode!;
+      const index = Array.prototype.indexOf.call(parent.childNodes, node);
+      if (left === 0) found = { node: parent, offset: index };
+      else left -= 1;
+    } else node.childNodes.forEach(walk);
+  };
+  el.childNodes.forEach(walk);
+  return found ?? { node: el, offset: el.childNodes.length };
 }
 
 // The text being typed. Enter starts a new line; clicking elsewhere confirms it.
 // Tab moves the caret's line right and Shift+Tab moves it back. With `lists`,
 // Enter on a checklist line starts the next line with a box, and on a numbered
 // line with the next number. Enter on a line holding only the box or number
-// ends the list. With `initialRuns`, highlighted words can get their own size
-// (scroll wheel / trackpad), boldness (Ctrl+B or the B button) and colour from
-// a bar that shows above the text while something is highlighted.
+// ends the list; the same goes for bullet points, which "-" then a space
+// starts. With `initialRuns`, a bar shows above the text while something is
+// highlighted: bold (or Ctrl+B), colours, background fills, and turning the
+// highlighted lines into a numbered list, bullet points or a checklist.
 export function TextEditor({
   initial,
   initialRuns,
@@ -67,29 +96,45 @@ export function TextEditor({
       const sel = window.getSelection();
       return !!sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.getRangeAt(0).commonAncestorContainer);
     };
-    // Show the B / colour bar while part of the text is highlighted.
+    // Show the format bar while part of the text is highlighted.
     function onSelectionChange() {
       setHighlight(highlighted() ? { bold: document.queryCommandState("bold") } : null);
     }
-    // Scroll wheel / trackpad over highlighted words resizes just those words.
-    function onWheel(e: WheelEvent) {
-      if (!highlighted()) return;
-      e.preventDefault();
-      e.stopPropagation();
-      scaleSelection(el, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.002)));
-    }
     document.addEventListener("selectionchange", onSelectionChange);
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      document.removeEventListener("selectionchange", onSelectionChange);
-      el.removeEventListener("wheel", onWheel);
-    };
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, [rich]);
 
-  function format(command: "bold" | "foreColor", value?: string) {
+  function format(command: "bold" | "foreColor" | "hiliteColor", value?: string) {
     document.execCommand("styleWithCSS", false, "true");
     document.execCommand(command, false, value);
     setHighlight({ bold: document.queryCommandState("bold") });
+  }
+
+  // Turn the highlighted lines into a list (or back, if they all are one),
+  // keeping those lines highlighted.
+  function makeList(kind: ListKind) {
+    const el = ref.current!;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const lineOf = (node: Node, offset: number) => textUpTo(el, node, offset).split("\n").length - 1;
+    const from = lineOf(range.startContainer, range.startOffset);
+    const to = lineOf(range.endContainer, range.endOffset);
+    const runs = setListKind(domToRuns(el), from, to, kind, UNCHECKED);
+    runsToDom(el, runs);
+    const lines = runs
+      .map((r) => r.text)
+      .join("")
+      .split("\n");
+    const start = lines.slice(0, from).reduce((n, l) => n + l.length + 1, 0);
+    const end = lines.slice(0, to + 1).reduce((n, l) => n + l.length + 1, 0) - 1;
+    const a = pointAt(el, start);
+    const b = pointAt(el, end);
+    const kept = document.createRange();
+    kept.setStart(a.node, a.offset);
+    kept.setEnd(b.node, b.offset);
+    sel.removeAllRanges();
+    sel.addRange(kept);
   }
 
   return (
@@ -119,6 +164,43 @@ export function TextEditor({
               style={{ background: color }}
             />
           ))}
+          <span className="mx-0.5 h-5 w-px bg-stone-200" />
+          <button
+            aria-label="No fill"
+            onClick={() => format("hiliteColor", "transparent")}
+            className="size-5 rounded border border-stone-300 bg-[linear-gradient(135deg,transparent_45%,#d6d3d1_45%,#d6d3d1_55%,transparent_55%)]"
+          />
+          {TEXT_FILLS.map((fill) => (
+            <button
+              key={fill}
+              aria-label={`Fill ${fill}`}
+              onClick={() => format("hiliteColor", fill)}
+              className="size-5 rounded border border-stone-200"
+              style={{ background: fill }}
+            />
+          ))}
+          <span className="mx-0.5 h-5 w-px bg-stone-200" />
+          <button
+            aria-label="Numbered list"
+            onClick={() => makeList("number")}
+            className="rounded px-1 text-xs text-stone-900 hover:bg-stone-100"
+          >
+            1.2.3.
+          </button>
+          <button
+            aria-label="Bullet points"
+            onClick={() => makeList("bullet")}
+            className="flex size-6 items-center justify-center rounded text-xl leading-none text-stone-900 hover:bg-stone-100"
+          >
+            {BULLET}
+          </button>
+          <button
+            aria-label="Checklist"
+            onClick={() => makeList("check")}
+            className="flex size-6 items-center justify-center rounded text-stone-900 hover:bg-stone-100"
+          >
+            <ChecklistIcon />
+          </button>
         </div>
       )}
       <div
@@ -136,6 +218,13 @@ export function TextEditor({
           if (rich && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
             e.preventDefault();
             format("bold");
+            return;
+          }
+          // "-" then a space at the start of a line makes a bullet point.
+          if (lists && e.key === " " && textBeforeCaret(e.currentTarget).trimStart() === "-") {
+            e.preventDefault();
+            document.execCommand("delete");
+            document.execCommand("insertText", false, `${BULLET} `);
             return;
           }
           if (e.key === "Tab") {
@@ -164,7 +253,13 @@ export function TextEditor({
             const indent = full.match(/^ */)![0];
             const line = full.slice(indent.length);
             const number = line.match(/^(\d+)\. /);
-            const marker = /^[☐☑] /.test(line) ? `${UNCHECKED} ` : number ? `${Number(number[1]) + 1}. ` : "";
+            const marker = /^[☐☑] /.test(line)
+              ? `${UNCHECKED} `
+              : number
+                ? `${Number(number[1]) + 1}. `
+                : line.startsWith(`${BULLET} `)
+                  ? `${BULLET} `
+                  : "";
             if (marker && line === (number ? number[0] : line.slice(0, 2))) {
               // An empty list line: remove its box or number to end the list.
               for (let i = 0; i < line.length; i++) document.execCommand("delete");
@@ -180,7 +275,7 @@ export function TextEditor({
           const runs = domToRuns(e.currentTarget);
           onConfirm(runs.map((r) => r.text).join(""), runs);
         }}
-        className="min-w-[1ch] cursor-text whitespace-pre bg-white px-1 outline-none"
+        className="min-w-[1ch] cursor-text whitespace-pre px-1 outline-none"
         style={{ ...style, userSelect: "text", caretColor: style.color }}
       />
     </div>

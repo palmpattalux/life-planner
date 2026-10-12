@@ -28,6 +28,7 @@ export type Text = {
   fontSize: number;
   color: string;
   bold: boolean;
+  bg?: string; // background fill; left out: none
   // Parts with their own size, boldness or colour. Left out when the whole
   // text looks the same; otherwise the runs' text joined is `text`.
   runs?: Run[];
