@@ -76,9 +76,14 @@ export function useBoards({ withContent = false, currentId }: { withContent?: bo
 
   // Hide a board from Home's main list, or show it again (it goes back to
   // where it was, since the order doesn't change).
+  // If it couldn't be saved, it goes back and `hideError` says so.
+  const [hideError, setHideError] = useState(false);
   async function setHidden(p: Project, hidden: boolean) {
-    setProjects((ps) => ps?.map((x) => (x.id === p.id ? { ...x, hidden } : x)) ?? ps);
-    await supabase.from("pages").update({ hidden }).eq("id", p.id);
+    const flip = (h: boolean) => setProjects((ps) => ps?.map((x) => (x.id === p.id ? { ...x, hidden: h } : x)) ?? ps);
+    flip(hidden);
+    const { data, error } = await supabase.from("pages").update({ hidden }).eq("id", p.id).select("id");
+    setHideError(!!error || data?.length !== 1);
+    if (error || data?.length !== 1) flip(!hidden);
   }
 
   async function restore(p: Project) {
@@ -108,6 +113,7 @@ export function useBoards({ withContent = false, currentId }: { withContent?: bo
     remove,
     restore,
     setHidden,
+    hideError,
     duplicate,
     emptyTrash,
   };
@@ -312,6 +318,11 @@ export function BoardList({
           </button>
         </form>
       </div>
+      {home && boards.hideError && (
+        <p data-hide-error className="px-8 pb-2 text-center text-xs text-red-600">
+          Couldn&apos;t save hiding that board. The database may need its latest setup (supabase/schema.sql).
+        </p>
+      )}
       {home && showHidden && hidden.length > 0 && (
         <div data-hidden-boards className="px-8 pb-4">
           <div className="mb-2 text-xs text-stone-400">Hidden boards</div>

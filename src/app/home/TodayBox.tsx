@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckMark } from "@/components/board/icons";
 import { INK } from "@/components/board/constants";
 import { loadPastDays, loadToday, parseDate, saveDay, setLinkDone, today, type Day } from "@/lib/planner";
@@ -14,13 +14,32 @@ const box = "rounded-2xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.08)]";
 // kept with its date (see "View past to-do days") for 30 days.
 export function TodayBox() {
   const supabase = useMemo(createClient, []);
-  const { value, change, failed } = useSaved<Day>(
+  const { value, change, failed, refresh } = useSaved<Day>(
+    "today",
     async () => ({ day: today(), items: await loadToday(supabase) }),
     (d) => saveDay(supabase, d.day, d.items),
   );
   const [focus, setFocus] = useState(0);
+  // At midnight (this device's time zone) today's list is saved under its
+  // date, so it's in Past to-dos, and a new empty list starts.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      timer = setTimeout(async () => {
+        await refresh();
+        if (showPastRef.current) void loadPastDays(supabase).then(setPast, () => {});
+        schedule();
+      }, midnight.getTime() - now.getTime());
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [past, setPast] = useState<Day[] | null>(null);
   const [showPast, setShowPast] = useState(false);
+  const showPastRef = useRef(showPast);
+  showPastRef.current = showPast;
 
   function togglePast() {
     setShowPast((s) => !s);

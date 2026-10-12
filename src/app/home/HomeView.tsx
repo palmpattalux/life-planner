@@ -26,6 +26,7 @@ export function HomeView({ email }: { email?: string }) {
   const boards = useBoards({ withContent: true });
   const supabase = useMemo(createClient, []);
   const phase = useSaved<Phase>(
+    "milestone",
     () => loadPhase(supabase),
     (p) => savePhase(supabase, p),
   );
