@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TRASH_DAYS, UNTITLED_BOARD } from "@/lib/pages";
 import { createClient } from "@/lib/supabase/client";
+import type { BoardData } from "@/components/board/model";
 import { createBoard } from "./actions";
+import { BoardPreview } from "./BoardPreview";
 
-type Project = { id: string; title: string; deleted_at: string | null };
+type Project = { id: string; title: string; deleted_at: string | null; content?: BoardData };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GAP = 12;
@@ -36,8 +38,17 @@ function tileLayout(n: number, w: number, h: number) {
 // boards, the smaller each box). Hovering a board shows Remove (to the trash
 // for 30 days) and Duplicate. Used by the "Open?" box and the Home page.
 // `currentId` is the board open right now, if any; clicking it calls
-// `onOpenCurrent` instead of reloading it.
-export function BoardList({ currentId, onOpenCurrent }: { currentId?: string; onOpenCurrent?: () => void }) {
+// `onOpenCurrent` instead of reloading it. `home`: the bare Home look, with
+// no dividers, boxes that pop and a blurred picture of each board.
+export function BoardList({
+  currentId,
+  onOpenCurrent,
+  home = false,
+}: {
+  currentId?: string;
+  onOpenCurrent?: () => void;
+  home?: boolean;
+}) {
   const supabase = useMemo(createClient, []);
   const router = useRouter();
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -60,12 +71,12 @@ export function BoardList({ currentId, onOpenCurrent }: { currentId?: string; on
       .lt("deleted_at", new Date(Date.now() - TRASH_DAYS * DAY_MS).toISOString());
     const { data } = await supabase
       .from("pages")
-      .select("id, title, deleted_at")
+      .select(home ? "id, title, deleted_at, content" : "id, title, deleted_at")
       .eq("kind", "board")
       .is("parent_id", null)
       .order("opened_at", { ascending: false, nullsFirst: false })
       .order("updated_at", { ascending: false });
-    setProjects((data ?? []) as Project[]);
+    setProjects((data ?? []) as unknown as Project[]);
   }
 
   useEffect(() => {
@@ -100,27 +111,37 @@ export function BoardList({ currentId, onOpenCurrent }: { currentId?: string; on
 
   return (
     <>
-      <div ref={areaRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+      {/* On Home the padding leaves room for a box's lift and shadow. */}
+      <div ref={areaRef} className={`min-h-0 flex-1 overflow-y-auto ${home ? "p-8" : "px-5 pb-5"}`}>
         {projects === null && <p className="text-sm text-stone-400">Loading…</p>}
         {projects !== null && live.length === 0 && <p className="text-sm text-stone-400">No boards yet.</p>}
         {(() => {
-          // Inside the padding (px-5 pb-5 = 20px each side).
-          const { cols, tw, th } = tileLayout(live.length, area.w - 40, area.h - 20);
+          // Inside the padding (p-8 = 32px each side; px-5 pb-5 = 20px).
+          const { cols, tw, th } = home
+            ? tileLayout(live.length, area.w - 64, area.h - 64)
+            : tileLayout(live.length, area.w - 40, area.h - 20);
           return (
             <div className="grid" style={{ gridTemplateColumns: `repeat(${cols}, ${tw}px)`, gap: GAP }}>
               {live.map((p) => (
                 <div
                   key={p.id}
                   data-project={p.id}
-                  className={`group relative rounded-xl border-2 bg-stone-50 hover:border-stone-400 ${p.id === currentId ? "border-stone-900" : "border-stone-200"}`}
+                  className={
+                    home
+                      ? "group relative overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.08)] transition duration-200 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-[0_10px_20px_rgba(0,0,0,0.12)] active:scale-[0.98]"
+                      : `group relative rounded-xl border-2 bg-stone-50 hover:border-stone-400 ${p.id === currentId ? "border-stone-900" : "border-stone-200"}`
+                  }
                   style={{ height: th }}
                 >
                   <Link
                     href={`/board/${p.id}`}
                     onClick={p.id === currentId ? onOpenCurrent : undefined}
-                    className="flex size-full flex-col items-center justify-center gap-1 overflow-hidden p-3 text-center"
+                    className={`relative flex size-full flex-col items-center gap-1 overflow-hidden p-3 text-center ${home ? "justify-end" : "justify-center"}`}
                   >
-                    <span className="line-clamp-3 font-medium">{p.title || UNTITLED_BOARD}</span>
+                    {home && <BoardPreview data={p.content ?? null} />}
+                    <span className={`relative font-medium ${home ? "line-clamp-1 text-sm" : "line-clamp-3"}`}>
+                      {p.title || UNTITLED_BOARD}
+                    </span>
                     {p.id === currentId && <span className="text-xs text-stone-400">open now</span>}
                   </Link>
                   <div className="absolute right-2 top-2 hidden gap-1 group-hover:flex">
@@ -145,7 +166,7 @@ export function BoardList({ currentId, onOpenCurrent }: { currentId?: string; on
       </div>
 
       {trash.length > 0 && (
-        <div className="max-h-48 overflow-y-auto border-t border-stone-200 px-3 py-2">
+        <div className={`max-h-48 overflow-y-auto px-3 py-2 ${home ? "" : "border-t border-stone-200"}`}>
           <button
             onClick={() => setShowTrash((t) => !t)}
             className="px-2 py-1 text-sm text-stone-500 hover:text-stone-900"
@@ -165,9 +186,17 @@ export function BoardList({ currentId, onOpenCurrent }: { currentId?: string; on
         </div>
       )}
 
-      <div className="border-t border-stone-200 p-4">
+      <div className={home ? "flex justify-center p-4" : "border-t border-stone-200 p-4"}>
         <form action={createBoard}>
-          <button className="rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white">New board</button>
+          <button
+            className={
+              home
+                ? "rounded-full bg-stone-900 px-5 py-2 text-sm font-medium text-white shadow-[0_4px_14px_rgba(0,0,0,0.2)] transition hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(0,0,0,0.25)] active:scale-95"
+                : "rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white"
+            }
+          >
+            New board
+          </button>
         </form>
       </div>
     </>

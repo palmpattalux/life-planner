@@ -2,7 +2,7 @@
 
 A huge white board, like Miro, with faint grey dots and a light grey line at its edge. Log in from any device.
 
-Opening the app goes straight to the board you opened last, with an **Open?** box on the right listing all your boards as big boxes that share out its space (the more boards, the smaller each box) so you can switch with one click. Click anywhere else or the x to close it. **Home** at the top left of a board goes to the Home page: your account email at the top left, a menu at the top right with **Log out**, and all your boards as the same boxes in a frame in the middle of the screen. Hovering a board shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. Both have **New board**. Boards save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left.
+Opening the app goes straight to the board you opened last, with an **Open?** box on the right listing all your boards as big boxes that share out its space (the more boards, the smaller each box) so you can switch with one click. Click anywhere else or the x to close it. **Home** at the top left of a board goes to the Home page: your account email at the top left, a menu at the top right with **Log out**, and all your boards grouped in the middle with no frame: white boxes that lift when you hover, each with a slightly blurred picture of what's on that board. Hovering a board shows **Remove** (moves it to the trash, where it can be restored for 30 days before it's deleted for good) and **Duplicate**. Both have **New board**. Boards save by themselves as you work (the top left says Saved), and you can type over a board's name at the top left.
 
 - Two-finger swipe on the trackpad moves around the board.
 - Pinch on the trackpad, or the mouse scroll wheel, zooms in and out.
@@ -11,7 +11,7 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 - Hold **n** to start a line at the cursor, move the mouse, and let go of **n** to confirm it. A line that starts or ends inside a circle or text is attached to it.
 - Lines snap exactly level or upright when they are within a few degrees of horizontal or vertical (while drawing, dragging an end or dragging a bend).
 - Click a line to show a dot on each end; drag a dot to move that end. Drag the middle of a line to move the whole line.
-- Click a line and choose **Time**, then Day, Week, Month or Year. The line becomes a timeline, like a ruler.
+- Click a line and choose **Time**, then Day, Week, Month or Year. The line becomes a timeline, like a ruler. Stretch it longer on the board (its real length, not zooming) and the space between marks fills with smaller steps: dates in a month, months in a year, days in a week, hours in a day. The longer it is, the more show (every 15th date, then every 5th, then every date). A phase can start and end on these too; it then shows its ends in full, like "Nov 5" and "Nov 20".
   - **Day** (0–31), **Week** (1–4) and **Year**: two slots, Beginning → End. Type a number or scroll over a slot to count up or down. Enter moves from Beginning to End, and Enter again finishes.
   - **Month**: pick the beginning month (Jan–Dec), then the end month. It can wrap round the year, e.g. Nov → Feb.
 - Click a timeline and a **Phase** box appears beside the first third of it (above a level timeline, left of an upright one, clear of the end dots). Press Phase, move along the timeline (the stretch shows in orange), click to set the start, then click again or press Enter to finish (Escape cancels). The stretch becomes a phase beside the original (on the right of an upright timeline, above a level one), no longer connected to it. A phase looks like a bracket "]": its ends curl toward the original timeline and it shows only its start and end dates, with no marks in between.
@@ -85,6 +85,7 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 | --- | --- |
 | `src/app/page.tsx` | Opens the most recent board (or Home when there are none) |
 | `src/app/home/` | Home page: account email, menu with Log out, all boards |
+| `src/app/BoardPreview.tsx` | The blurred picture of a board on Home |
 | `src/app/BoardList.tsx` | Board boxes (used by Home and Open?): switch, remove (trash), duplicate, restore, new |
 | `src/app/OpenPanel.tsx` | The Open? box on a board |
 | `src/app/board/[id]/` | A saved board (saves as you go, keeps presets) |

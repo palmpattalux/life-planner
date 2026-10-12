@@ -78,9 +78,18 @@ import {
 import { isPlain, mergeRuns, runLines, sliceRuns, type Run } from "./richText";
 import { SIDE_MENU_W, SideMenu } from "./SideMenu";
 import { TextEditor } from "./TextEditor";
-import { tickValue, timelineTicks } from "./timeline";
+import { subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
 
 type View = { x: number; y: number; scale: number };
+// The room (in board units) one smaller step of a stretched timeline needs
+// before it shows, and how many to skip when they don't all fit yet.
+const SUB_TICK_GAP = 34;
+const SUB_STEP_CHOICES: Record<TimeUnit, number[]> = {
+  year: [1, 3, 6],
+  month: [1, 2, 5, 10, 15],
+  week: [1],
+  day: [1, 3, 6, 12],
+};
 // "selection": pressing inside the selection box, on empty board.
 type DragKind = Kind | End | "bend" | "corner" | "selection";
 
@@ -1277,9 +1286,28 @@ export function Board({
   // A timeline's drawn points, its tick labels and the gap between ticks.
   function timelineGeometry(l: Line) {
     const pts = drawPoints(resolve(l));
-    const labels = (l.time && timelineTicks(l.time)) || [];
+    const labels = (l.time && timelineLabels(l.time)) || [];
     const len = polylineLength(pts) || 1;
     return { pts, labels, len, spacing: labels.length > 1 ? len / (labels.length - 1) : len };
+  }
+
+  // The smaller steps showing between a timeline's ticks because it's
+  // stretched far enough (by its real length on the board, not the zoom): the
+  // longer it is, the more of them show. `pos` is where, in ticks (2.5 is
+  // halfway between the third and fourth tick).
+  function subTicks(l: Line): { pos: number; label: string }[] {
+    if (!l.time || l.bracket) return [];
+    const { labels, spacing } = timelineGeometry(l);
+    const out: { pos: number; label: string }[] = [];
+    for (let j = 0; j < labels.length - 1; j++) {
+      const steps = subSteps(l.time.unit, tickValue(l.time, j));
+      const every = SUB_STEP_CHOICES[l.time.unit].find((k) => (spacing * k) / steps.length >= SUB_TICK_GAP);
+      if (!every) continue;
+      for (let i = every; steps.length - i >= every / 2; i += every) {
+        out.push({ pos: j + i / steps.length, label: steps[i] });
+      }
+    }
+    return out;
   }
 
   // The tick of the phase's timeline nearest this screen position.
@@ -1287,7 +1315,12 @@ export function Board({
     const l = lines.find((x) => x.id === phase?.lineId);
     if (!l) return 0;
     const { pts, labels, spacing } = timelineGeometry(l);
-    return clamp(Math.round(distanceAlong(pts, toBoard(sx, sy)) / spacing), 0, labels.length - 1);
+    const at = distanceAlong(pts, toBoard(sx, sy)) / spacing;
+    const tick = clamp(Math.round(at), 0, labels.length - 1);
+    // Phases can also start or end at the smaller steps showing in between
+    // (pins only go on the ticks).
+    if (phase?.pin) return tick;
+    return subTicks(l).reduce((best, s) => (Math.abs(s.pos - at) < Math.abs(best - at) ? s.pos : best), tick);
   }
 
   // Make the chosen stretch of the timeline into its own timeline, beside the
@@ -1306,6 +1339,18 @@ export function Board({
     const side = upright ? Math.sign(d.y) : d.x > 0 || (d.x === 0 && d.y <= 0) ? 1 : -1;
     const gap = upright ? PHASE_GAP_PAST_LABELS : PHASE_GAP;
     const off = offsetPolyline(subPolyline(pts, i1 * spacing, i2 * spacing), side * gap);
+    // Each end as a tick, plus which smaller step inside it (0: the tick itself).
+    const split = (pos: number) => {
+      const j = Math.floor(pos + 1e-9);
+      const value = tickValue(l.time!, j);
+      return { value, sub: Math.round((pos - j) * subSteps(l.time!.unit, value).length) };
+    };
+    const a = split(i1);
+    const b = split(i2);
+    const time =
+      a.sub || b.sub
+        ? { unit: l.time.unit, start: a.value, end: b.value, startSub: a.sub, endSub: b.sub }
+        : { unit: l.time.unit, start: a.value, end: b.value };
     const id = nextId.current++;
     commit();
     setLines((ls) => [
@@ -1315,7 +1360,7 @@ export function Board({
         from: off[0],
         to: off[off.length - 1],
         bends: off.length > 2 ? off.slice(1, -1) : undefined,
-        time: { unit: l.time!.unit, start: tickValue(l.time!, i1), end: tickValue(l.time!, i2) },
+        time,
         // Its ends curl back toward the timeline it came from.
         bracket: side > 0 ? -1 : 1,
       },
@@ -1361,14 +1406,14 @@ export function Board({
   // evenly spaced along the line from its start to its end. Labels are thinned
   // out when they would overlap.
   function timelineMarks(l: Line, pts: Point[]) {
-    const labels = l.time && timelineTicks(l.time);
+    const labels = l.time && timelineLabels(l.time);
     if (!labels) return null;
     const len = polylineLength(pts) || 1;
     const n = labels.length;
     const spacing = n > 1 ? len / (n - 1) : len;
     const labelEvery = Math.max(1, Math.ceil(TICK_LABEL_GAP / spacing));
     const tickEvery = Math.max(1, Math.ceil(3 / spacing));
-    return labels.map((text, i) => {
+    const main = labels.map((text, i) => {
       const isEnd = i === 0 || i === n - 1;
       const pin = l.pins?.find((p) => p.value === tickValue(l.time!, i));
       if (!pin && !isEnd && i % tickEvery !== 0) return null;
@@ -1448,6 +1493,40 @@ export function Board({
         </g>
       );
     });
+    // The smaller steps in between, drawn smaller and lighter.
+    const subs = subTicks(l).map(({ pos, label }) => {
+      const { p, dir } = pointAlong(pts, pos * spacing);
+      let nx = -dir.y;
+      let ny = dir.x;
+      if (ny < 0 || (ny === 0 && nx < 0)) {
+        nx = -nx;
+        ny = -ny;
+      }
+      const fontSize = TICK_LABEL_SIZE * 0.8;
+      return (
+        <g key={`sub${pos}`} data-sub-tick={label} opacity={0.6}>
+          <line
+            x1={p.x - nx * TICK * 0.6}
+            y1={p.y - ny * TICK * 0.6}
+            x2={p.x + nx * TICK * 0.6}
+            y2={p.y + ny * TICK * 0.6}
+            stroke={l.color ?? INK}
+            strokeWidth={1}
+          />
+          <text
+            x={p.x + nx * (TICK * 0.6 + fontSize)}
+            y={p.y + ny * (TICK * 0.6 + fontSize)}
+            fontSize={fontSize}
+            fill={l.color ?? "#57534e"}
+            textAnchor="middle"
+            dominantBaseline="middle"
+          >
+            {label}
+          </text>
+        </g>
+      );
+    });
+    return [...main, ...subs];
   }
 
   // Fade the dots out when zoomed far out so they don't turn into a grey haze.
@@ -2020,6 +2099,8 @@ export function Board({
           (() => {
             const { pts, labels, len } = timelineGeometry(selectedLine);
             if (labels.length < 2) return null;
+            // A phase made between smaller steps only has its colours.
+            const ends = selectedLine.time?.startSub !== undefined;
             const { p: at, dir } = pointAlong(pts, len / 3);
             // Beside the line, on its upper or left side, clear of the line
             // itself so it never covers an end dot.
@@ -2033,15 +2114,17 @@ export function Board({
                 className={`absolute flex flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg ${toSide ? "-translate-x-full -translate-y-1/2" : "-translate-x-1/2 -translate-y-full"}`}
                 style={{ left: at.x + n.x * px(14), top: at.y + n.y * px(14) }}
               >
-                <button
-                  onClick={() => {
-                    setSelection([]);
-                    setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
-                  }}
-                  className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
-                >
-                  Phase
-                </button>
+                {!ends && (
+                  <button
+                    onClick={() => {
+                      setSelection([]);
+                      setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
+                    }}
+                    className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+                  >
+                    Phase
+                  </button>
+                )}
                 <div className="flex gap-1.5 px-2 py-1.5">
                   {TEXT_COLORS.map((color) => (
                     <button
@@ -2053,16 +2136,18 @@ export function Board({
                     />
                   ))}
                 </div>
-                <button
-                  onClick={() => {
-                    setSelection([]);
-                    setPhase({ lineId: selectedLine.id, start: null, hover: 0, pin: true });
-                  }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100"
-                >
-                  <PinIcon />
-                  Pin
-                </button>
+                {!ends && (
+                  <button
+                    onClick={() => {
+                      setSelection([]);
+                      setPhase({ lineId: selectedLine.id, start: null, hover: 0, pin: true });
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100"
+                  >
+                    <PinIcon />
+                    Pin
+                  </button>
+                )}
               </div>
             );
           })()}
