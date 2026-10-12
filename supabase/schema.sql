@@ -106,3 +106,6 @@ drop policy if exists "own pictures" on storage.objects;
 create policy "own pictures" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'pictures' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Added later: boards hidden from Home's main list (shown under the eye button).
+alter table public.pages add column if not exists hidden boolean not null default false;

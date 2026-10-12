@@ -51,14 +51,16 @@ export function HomeView({ email }: { email?: string }) {
           )}
         </aside>
         {/* The boards, grouped in the middle of the screen with nothing around them. */}
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-          {left && (
-            <p data-countdown className="mb-1 text-center text-xl font-medium text-stone-900/25 sm:text-2xl">
-              {left}
-            </p>
-          )}
-          <div data-home-boards className="flex h-[min(60vh,560px)] w-full max-w-3xl flex-col pt-3">
-            <BoardList boards={boards} home />
+        <div className="flex min-h-0 flex-1 flex-col items-center xl:overflow-y-auto">
+          <div className="my-auto flex w-full flex-col items-center">
+            {left && (
+              <p data-countdown className="mb-1 text-center text-xl font-medium text-stone-900/25 sm:text-2xl">
+                {left}
+              </p>
+            )}
+            <div data-home-boards className="flex w-full max-w-3xl flex-col pt-3">
+              <BoardList boards={boards} home />
+            </div>
           </div>
         </div>
       </div>

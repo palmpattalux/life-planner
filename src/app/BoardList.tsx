@@ -11,7 +11,7 @@ import { BoardPreview } from "./BoardPreview";
 import { MergeDialog } from "./MergeDialog";
 import { TornPaper } from "./TornPaper";
 
-export type Project = { id: string; title: string; deleted_at: string | null; content?: BoardData };
+export type Project = { id: string; title: string; deleted_at: string | null; hidden?: boolean; content?: BoardData };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GAP = 12;
@@ -49,13 +49,17 @@ export function useBoards({ withContent = false, currentId }: { withContent?: bo
       .from("pages")
       .delete()
       .lt("deleted_at", new Date(Date.now() - TRASH_DAYS * DAY_MS).toISOString());
-    const { data } = await supabase
-      .from("pages")
-      .select(withContent ? "id, title, deleted_at, content" : "id, title, deleted_at")
-      .eq("kind", "board")
-      .is("parent_id", null)
-      .order("opened_at", { ascending: false, nullsFirst: false })
-      .order("updated_at", { ascending: false });
+    const query = (columns: string) =>
+      supabase
+        .from("pages")
+        .select(withContent ? `${columns}, content` : columns)
+        .eq("kind", "board")
+        .is("parent_id", null)
+        .order("opened_at", { ascending: false, nullsFirst: false })
+        .order("updated_at", { ascending: false });
+    let { data, error } = await query("id, title, deleted_at, hidden");
+    // Before the database has the "hidden" column, nothing is hidden.
+    if (error) ({ data, error } = await query("id, title, deleted_at"));
     setProjects((data ?? []) as unknown as Project[]);
   }
 
@@ -68,6 +72,13 @@ export function useBoards({ withContent = false, currentId }: { withContent?: bo
     // Removing the open project moves on to the next most recent one.
     if (p.id === currentId) router.push("/");
     else void load();
+  }
+
+  // Hide a board from Home's main list, or show it again (it goes back to
+  // where it was, since the order doesn't change).
+  async function setHidden(p: Project, hidden: boolean) {
+    setProjects((ps) => ps?.map((x) => (x.id === p.id ? { ...x, hidden } : x)) ?? ps);
+    await supabase.from("pages").update({ hidden }).eq("id", p.id);
   }
 
   async function restore(p: Project) {
@@ -96,6 +107,7 @@ export function useBoards({ withContent = false, currentId }: { withContent?: bo
     trash: projects?.filter((p) => p.deleted_at) ?? [],
     remove,
     restore,
+    setHidden,
     duplicate,
     emptyTrash,
   };
@@ -136,7 +148,11 @@ export function BoardList({
   onOpenCurrent?: () => void;
   home?: boolean;
 }) {
-  const { projects, live, trash, remove, duplicate } = boards;
+  const { projects, live: all, trash, remove, duplicate, setHidden } = boards;
+  // On Home, hidden boards leave the main list for the section under the eye button.
+  const live = home ? all.filter((p) => !p.hidden) : all;
+  const hidden = home ? all.filter((p) => p.hidden) : [];
+  const [showHidden, setShowHidden] = useState(false);
   const router = useRouter();
   const supabase = useMemo(createClient, []);
   // Merge: the board whose "All? / Select?" choice is showing, and the board
@@ -158,9 +174,14 @@ export function BoardList({
   return (
     <>
       {/* On Home the padding leaves room for a box's lift and shadow. */}
-      <div ref={areaRef} className={`min-h-0 flex-1 overflow-y-auto ${home ? "p-8" : "px-5 pb-5"}`}>
+      <div
+        ref={areaRef}
+        className={`overflow-y-auto ${home ? "h-[min(60vh,560px)] flex-none p-8" : "min-h-0 flex-1 px-5 pb-5"}`}
+      >
         {projects === null && <p className="text-sm text-stone-400">Loading…</p>}
-        {projects !== null && live.length === 0 && <p className="text-sm text-stone-400">No boards yet.</p>}
+        {projects !== null && live.length === 0 && (
+          <p className="text-sm text-stone-400">{hidden.length ? "Every board is hidden." : "No boards yet."}</p>
+        )}
         {(() => {
           // Inside the padding (p-8 = 32px each side; px-5 pb-5 = 20px).
           const { cols, tw, th } = home
@@ -181,6 +202,7 @@ export function BoardList({
                       {/* The name, on a torn scrap of paper in the top right corner. */}
                       <TornPaper seed={p.id}>{p.title || UNTITLED_BOARD}</TornPaper>
                     </Link>
+                    <EyeButton hidden={false} onClick={() => setHidden(p, true)} />
                     <div
                       className={`absolute bottom-2 right-2 gap-1 group-hover:flex ${mergeChoice === p.id ? "flex" : "hidden"}`}
                     >
@@ -264,7 +286,20 @@ export function BoardList({
         </div>
       )}
 
-      <div className={home ? "flex justify-center p-4" : "border-t border-stone-200 p-4"}>
+      <div className={home ? "relative flex justify-center p-4" : "border-t border-stone-200 p-4"}>
+        {home && hidden.length > 0 && (
+          // Below the rightmost board: shows (or hides) the hidden boards.
+          <button
+            data-show-hidden
+            aria-label={showHidden ? "Close hidden boards" : `Show hidden boards (${hidden.length})`}
+            title={showHidden ? "Close hidden boards" : "Hidden boards"}
+            onClick={() => setShowHidden((s) => !s)}
+            className={`absolute right-8 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs shadow-[0_2px_8px_rgba(0,0,0,0.12)] transition hover:-translate-y-[calc(50%+2px)] active:scale-95 ${showHidden ? "bg-stone-900 text-white" : "bg-white text-stone-600"}`}
+          >
+            <EyeIcon />
+            {hidden.length}
+          </button>
+        )}
         <form action={createBoard}>
           <button
             className={
@@ -277,6 +312,26 @@ export function BoardList({
           </button>
         </form>
       </div>
+      {home && showHidden && hidden.length > 0 && (
+        <div data-hidden-boards className="px-8 pb-4">
+          <div className="mb-2 text-xs text-stone-400">Hidden boards</div>
+          <div className="flex flex-wrap gap-3">
+            {hidden.map((p) => (
+              <div
+                key={p.id}
+                data-hidden-project={p.id}
+                className="group relative h-24 w-36 overflow-hidden rounded-xl bg-white opacity-80 shadow-[0_2px_10px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 hover:opacity-100"
+              >
+                <Link href={`/board/${p.id}`} className="absolute inset-0">
+                  <BoardPreview data={p.content ?? null} />
+                  <TornPaper seed={p.id}>{p.title || UNTITLED_BOARD}</TornPaper>
+                </Link>
+                <EyeButton hidden onClick={() => setHidden(p, false)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {mergeAll && (
         <MergeDialog
           source={mergeAll}
@@ -289,5 +344,40 @@ export function BoardList({
         />
       )}
     </>
+  );
+}
+
+// An eye, crossed out when `off`.
+function EyeIcon({ off = false }: { off?: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    >
+      <path d="M1.5 8 C3.5 4.5 5.7 3.2 8 3.2 C10.3 3.2 12.5 4.5 14.5 8 C12.5 11.5 10.3 12.8 8 12.8 C5.7 12.8 3.5 11.5 1.5 8 Z" />
+      <circle cx="8" cy="8" r="2.2" />
+      {off && <path d="M2.5 13.5 L13.5 2.5" />}
+    </svg>
+  );
+}
+
+// The little eye in a board box's top left corner, shown on hover: hides the
+// board (or, for a hidden one, puts it back in its spot).
+function EyeButton({ hidden, onClick }: { hidden: boolean; onClick: () => void }) {
+  return (
+    <button
+      data-eye={hidden ? "show" : "hide"}
+      aria-label={hidden ? "Show this board again" : "Hide this board"}
+      title={hidden ? "Show again" : "Hide"}
+      onClick={onClick}
+      className="absolute left-2 top-2 hidden size-7 items-center justify-center rounded-full bg-white text-stone-600 shadow-sm hover:bg-stone-100 hover:text-stone-900 group-hover:flex"
+    >
+      <EyeIcon />
+    </button>
   );
 }
