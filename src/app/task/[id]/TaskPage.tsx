@@ -7,7 +7,7 @@ import { EditorContent, useEditor, useEditorState, type Editor, type JSONContent
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { linkStates, setLinkDone } from "@/lib/planner";
+import { addToToday, linkStates, setLinkDone } from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
 import { statusText, useAutosave } from "@/lib/useAutosave";
 
@@ -97,6 +97,62 @@ export function TaskPage({
     });
   }, [editor, supabase]);
 
+  // The checklist line under the mouse (or, on a phone, the one being typed
+  // in), with "Add to today's to-do?" beside it.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<{ li: HTMLElement; top: number } | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
+  function showFor(li: HTMLElement | null) {
+    if (!li || !wrapRef.current) return setHover(null);
+    if (hover?.li === li) return;
+    setAdded(null);
+    setHover({ li, top: li.getBoundingClientRect().top - wrapRef.current.getBoundingClientRect().top });
+  }
+  useEffect(() => {
+    if (!editor) return;
+    const onSelect = () => {
+      const { node } = editor.view.domAtPos(editor.state.selection.from);
+      const el = node instanceof HTMLElement ? node : node.parentElement;
+      if (editor.isFocused) showFor(el?.closest<HTMLElement>('ul[data-type="taskList"] > li') ?? null);
+    };
+    editor.on("selectionUpdate", onSelect);
+    return () => {
+      editor.off("selectionUpdate", onSelect);
+    };
+  });
+
+  // Add the hovered checklist line to today's to-do list, linked so ticking
+  // either one ticks the other.
+  async function addHoveredToToday() {
+    if (!editor || !hover || !wrapRef.current) return;
+    // (The editor may have redrawn the line since, so find it again by where it is.)
+    const wrapTop = wrapRef.current.getBoundingClientRect().top;
+    const li = [...wrapRef.current.querySelectorAll<HTMLElement>('ul[data-type="taskList"] > li')]
+      .reverse()
+      .find((el) => Math.abs(el.getBoundingClientRect().top - wrapTop - hover.top) < 2);
+    // The checklist line whose element is the hovered one.
+    let pos = -1;
+    editor.state.doc.descendants((node, at) => {
+      if (pos === -1 && node.type.name === "taskItem" && editor.view.nodeDOM(at) === li) pos = at;
+    });
+    const item = pos === -1 ? null : editor.state.doc.nodeAt(pos);
+    if (!item) return;
+    const text = item.firstChild?.textContent.trim() ?? "";
+    if (!text) return;
+    let link: string = item.attrs.link;
+    if (!link) {
+      link = crypto.randomUUID();
+      ticks.current.set(link, item.attrs.checked);
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...item.attrs, link }));
+    }
+    try {
+      await addToToday(supabase, { text, link, done: item.attrs.checked });
+      setAdded("Added to today's to-do");
+    } catch {
+      setAdded("Couldn't add it. Try again.");
+    }
+  }
+
   return (
     <main className="mx-auto min-h-dvh max-w-3xl px-5 pb-24">
       <div className="sticky top-0 z-10 -mx-5 bg-background/95 px-5 pb-2 pt-4 backdrop-blur">
@@ -128,8 +184,31 @@ export function TaskPage({
         }}
         className="mt-6 w-full bg-transparent text-3xl font-bold outline-none placeholder:text-stone-300"
       />
-      <div className="mt-4">
+      <div
+        ref={wrapRef}
+        className="relative mt-4"
+        onMouseMove={(e) => {
+          const t = e.target as HTMLElement;
+          if (t.closest("[data-add-today-pop]")) return;
+          showFor(t.closest<HTMLElement>('ul[data-type="taskList"] > li'));
+        }}
+        onMouseLeave={() => setHover(null)}
+      >
         <EditorContent editor={editor} />
+        {hover && (
+          <button
+            key={hover.top}
+            type="button"
+            data-add-today-pop
+            // On press, so the line being typed in keeps its caret.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => void addHoveredToToday()}
+            className="animate-pop absolute right-0 rounded-full bg-stone-900 px-3 py-1 text-xs font-medium whitespace-nowrap text-white shadow-md transition hover:scale-105 active:scale-95"
+            style={{ top: hover.top }}
+          >
+            {added ?? "Add to today's to-do?"}
+          </button>
+        )}
       </div>
     </main>
   );

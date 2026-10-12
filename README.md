@@ -43,7 +43,7 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 ### Home
 
 - **Today's to-do list** (top left): click it to start typing; Enter adds the next line. It starts empty every day; **View past to-do days** shows the last 30 days.
-- **Phase goal**: click its dates to pick Day / Week / Month / Year and a beginning and end (Enter or click away to set), then write its tasks underneath. Hover a task (or tap it on a phone) for the arrow that opens the task's own page for notes and checklists.
+- **Phase goal**: click its dates to pick Day / Week / Month / Year and a beginning and end (Enter or click away to set), then write its tasks underneath. Hover a task (or tap it on a phone) for the arrow that opens the task's own page for notes and checklists. On that page, hovering a checklist line (or tapping it on a phone) shows **Add to today's to-do?**, which adds it to today's list, ticked together.
 - The faint line above the boards counts the days until the phase goal ends.
 
 Built with Next.js, TypeScript, Tailwind CSS and Supabase (login). Deployed on Vercel.
