@@ -200,6 +200,7 @@ export function BoardList({
                   <div
                     key={p.id}
                     data-project={p.id}
+                    data-pop
                     className="group relative overflow-hidden rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.08)] transition duration-200 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-[0_10px_20px_rgba(0,0,0,0.12)] active:scale-[0.98]"
                     style={{ height: th }}
                   >
@@ -300,6 +301,7 @@ export function BoardList({
             aria-label={showHidden ? "Close hidden boards" : `Show hidden boards (${hidden.length})`}
             title={showHidden ? "Close hidden boards" : "Hidden boards"}
             onClick={() => setShowHidden((s) => !s)}
+            data-pop
             className={`absolute right-8 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs shadow-[0_2px_8px_rgba(0,0,0,0.12)] transition hover:-translate-y-[calc(50%+2px)] active:scale-95 ${showHidden ? "bg-stone-900 text-white" : "bg-white text-stone-600"}`}
           >
             <EyeIcon />
@@ -331,6 +333,7 @@ export function BoardList({
               <div
                 key={p.id}
                 data-hidden-project={p.id}
+                data-pop
                 className="group relative h-24 w-36 overflow-hidden rounded-xl bg-white opacity-80 shadow-[0_2px_10px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 hover:opacity-100"
               >
                 <Link href={`/board/${p.id}`} className="absolute inset-0">

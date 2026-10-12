@@ -143,6 +143,7 @@ export function PhaseBox({ phase, onChange }: { phase: Phase | null; onChange: (
                   e.preventDefault();
                   void openPage(t);
                 }}
+                data-pop
                 className="animate-pop rounded-full px-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
               >
                 {opening === t.id ? "…" : "→"}

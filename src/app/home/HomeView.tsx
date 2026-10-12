@@ -7,6 +7,7 @@ import { BoardList, useBoards } from "../BoardList";
 import { AccountMenu } from "./AccountMenu";
 import { PhaseBox } from "./PhaseBox";
 import { TodayBox } from "./TodayBox";
+import { useHoverTap } from "./useHoverTap";
 import { useSaved } from "./useSaved";
 
 // How long until the milestone ends, for the faint line above the boards.
@@ -24,6 +25,8 @@ function countdown(p: Phase | null) {
 // (On narrower screens the to-do list and phase goal sit above the boards.)
 export function HomeView({ email }: { email?: string }) {
   const boards = useBoards({ withContent: true });
+  // A soft tap when hovering things that pop (Home only for now).
+  useHoverTap();
   const supabase = useMemo(createClient, []);
   const phase = useSaved<Phase>(
     "milestone",
