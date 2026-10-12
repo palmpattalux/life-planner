@@ -100,7 +100,14 @@ export function useAutosave(pageId: string, loadedAt: string) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { save, status };
+  // Save straight away and wait until every save so far has finished.
+  async function saveNow(patch: Patch) {
+    pending.current = { ...pending.current, ...patch };
+    flush();
+    await queue.current;
+  }
+
+  return { save, saveNow, status };
 }
 
 export const statusText: Record<SaveStatus, string> = {

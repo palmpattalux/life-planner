@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   ATTACH_DISTANCE,
   BRACKET_CURL,
@@ -117,6 +117,15 @@ type DragKind = Kind | End | "bend" | "corner" | "selection";
 // The board starts from `initial` and reports every change to `onChange`, so
 // the page around it can save it. Presets are kept by the page too.
 // README.md lists every control in full.
+// What the page around the board can ask of it (used by Merge's "Select?").
+export type BoardApi = {
+  // A copy of the selected things.
+  selected: () => BoardData;
+  // Take the selected things off the board (can be undone); returns the
+  // board as it is without them.
+  removeSelected: () => BoardData;
+};
+
 export function Board({
   initial = EMPTY_BOARD,
   onChange,
@@ -124,6 +133,8 @@ export function Board({
   onSavePreset,
   onUpdatePreset,
   onDeletePreset,
+  api,
+  onSelectionChange,
 }: {
   initial?: BoardData;
   onChange?: (data: BoardData) => void;
@@ -131,6 +142,9 @@ export function Board({
   onSavePreset?: (data: BoardData) => void;
   onUpdatePreset?: (id: string, data: BoardData) => void;
   onDeletePreset?: (id: string) => void;
+  api?: React.Ref<BoardApi>;
+  // Told how many things are selected whenever that changes.
+  onSelectionChange?: (count: number) => void;
 }) {
   const [board, setBoard] = useState<BoardData>(initial);
   const { circles, squares, texts, lines } = board;
@@ -624,30 +638,46 @@ export function Board({
 
   // Remove these things. Line ends attached to a removed circle or text stay
   // where they are.
-  function removeKeys(keys: Key[]) {
+  // The board without these things. Lines attached to something removed
+  // stay where they are, unattached.
+  function withoutKeys(keys: Key[], b: BoardData): BoardData {
     const cIds = idsOf(keys, "circle");
     const tIds = idsOf(keys, "text");
     const sIds = idsOf(keys, "square");
     const lIds = idsOf(keys, "line");
-    setBoard((b) => {
-      const gone = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
-      return {
-        circles: b.circles.filter((c) => !cIds.has(c.id)),
-        squares: b.squares.filter((q) => !sIds.has(q.id)),
-        texts: b.texts.filter((t) => !tIds.has(t.id)),
-        lines: b.lines
-          .filter((l) => !lIds.has(l.id))
-          .map((l) => {
-            const r = resolve(l, b);
-            return {
-              ...l,
-              ...(gone(l.fromItem) && { from: r.from, fromItem: undefined }),
-              ...(gone(l.toItem) && { to: r.to, toItem: undefined }),
-            };
-          }),
-      };
-    });
+    const gone = (id?: number) => id !== undefined && (cIds.has(id) || tIds.has(id) || sIds.has(id));
+    return {
+      circles: b.circles.filter((c) => !cIds.has(c.id)),
+      squares: b.squares.filter((q) => !sIds.has(q.id)),
+      texts: b.texts.filter((t) => !tIds.has(t.id)),
+      lines: b.lines
+        .filter((l) => !lIds.has(l.id))
+        .map((l) => {
+          const r = resolve(l, b);
+          return {
+            ...l,
+            ...(gone(l.fromItem) && { from: r.from, fromItem: undefined }),
+            ...(gone(l.toItem) && { to: r.to, toItem: undefined }),
+          };
+        }),
+    };
   }
+
+  function removeKeys(keys: Key[]) {
+    setBoard((b) => withoutKeys(keys, b));
+  }
+
+  useImperativeHandle(api, () => ({
+    selected: () => pickOut(selectionRef.current, boardRef.current),
+    removeSelected: () => {
+      const rest = withoutKeys(selectionRef.current, boardRef.current);
+      commit();
+      setBoard(rest);
+      setSelection([]);
+      return rest;
+    },
+  }));
+  useEffect(() => onSelectionChange?.(selection.length), [selection.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function undo() {
     const prev = history.current.pop();

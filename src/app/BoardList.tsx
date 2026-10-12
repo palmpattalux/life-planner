@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { BoardData } from "@/components/board/model";
 import { createBoard } from "./actions";
 import { BoardPreview } from "./BoardPreview";
+import { MergeDialog } from "./MergeDialog";
 import { TornPaper } from "./TornPaper";
 
 export type Project = { id: string; title: string; deleted_at: string | null; content?: BoardData };
@@ -136,6 +137,12 @@ export function BoardList({
   home?: boolean;
 }) {
   const { projects, live, trash, remove, duplicate } = boards;
+  const router = useRouter();
+  const supabase = useMemo(createClient, []);
+  // Merge: the board whose "All? / Select?" choice is showing, and the board
+  // being merged whole (picking where to).
+  const [mergeChoice, setMergeChoice] = useState<string | null>(null);
+  const [mergeAll, setMergeAll] = useState<Project | null>(null);
   const [showTrash, setShowTrash] = useState(false);
   // The space the board boxes fill.
   const areaRef = useRef<HTMLDivElement>(null);
@@ -174,14 +181,45 @@ export function BoardList({
                       {/* The name, on a torn scrap of paper in the top right corner. */}
                       <TornPaper seed={p.id}>{p.title || UNTITLED_BOARD}</TornPaper>
                     </Link>
-                    <div className="absolute bottom-2 right-2 hidden gap-1 group-hover:flex">
+                    <div
+                      className={`absolute bottom-2 right-2 gap-1 group-hover:flex ${mergeChoice === p.id ? "flex" : "hidden"}`}
+                    >
                       <button onClick={() => remove(p)} className={button}>
                         Remove
                       </button>
                       <button onClick={() => duplicate(p)} className={button}>
                         Duplicate
                       </button>
+                      <button
+                        onClick={() => setMergeChoice((m) => (m === p.id ? null : p.id))}
+                        className={`${button} ${mergeChoice === p.id ? "bg-stone-200" : ""}`}
+                      >
+                        Merge
+                      </button>
                     </div>
+                    {mergeChoice === p.id && (
+                      // Merge the whole board, or pick parts of it first.
+                      <div
+                        data-merge-choice
+                        className="absolute bottom-11 right-2 flex gap-1 rounded-lg bg-white p-1 shadow-lg"
+                      >
+                        <button
+                          onClick={() => {
+                            setMergeChoice(null);
+                            setMergeAll(p);
+                          }}
+                          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-stone-100"
+                        >
+                          All?
+                        </button>
+                        <button
+                          onClick={() => router.push(`/board/${p.id}?merge=1`)}
+                          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-stone-100"
+                        >
+                          Select?
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -239,6 +277,17 @@ export function BoardList({
           </button>
         </form>
       </div>
+      {mergeAll && (
+        <MergeDialog
+          source={mergeAll}
+          mode="all"
+          getContent={async () => {
+            const { data } = await supabase.from("pages").select("content").eq("id", mergeAll.id).single();
+            return (data?.content as BoardData) ?? null;
+          }}
+          onClose={() => setMergeAll(null)}
+        />
+      )}
     </>
   );
 }
