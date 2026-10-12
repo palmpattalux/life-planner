@@ -1,4 +1,4 @@
-// The site's look: "light" (the original) or "dark" (midnight). Chosen in
+// The site's look: "light" (the original) or "dark" (warm charcoal). Chosen in
 // Home's menu and kept in this browser.
 
 export type Theme = "light" | "dark";

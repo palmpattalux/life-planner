@@ -10,32 +10,32 @@
   --paper-face: #efe7d6;
 }
 
-/* The "Dark" theme (midnight), chosen in Home's menu. Light colours become
+/* The "Dark" theme (warm charcoal, like Claude's dark look), chosen in Home's menu. Light colours become
    dark and dark ones light, so everything keeps its contrast. */
 html[data-theme="dark"] {
   color-scheme: dark;
-  --background: #0e1426;
-  --foreground: #e8ecf5;
-  --dot: 200 212 245;
-  --paper-rim: #2c3757;
-  --paper-face: #222c49;
-  --ink: #e8ecf5;
-  --ink-soft: #9aa5c2;
-  --color-white: #18213a;
-  --color-stone-50: #141c32;
-  --color-stone-100: #222c47;
-  --color-stone-200: #2e3a5a;
-  --color-stone-300: #3d4a6d;
-  --color-stone-400: #6b7899;
-  --color-stone-500: #8d99b8;
-  --color-stone-600: #a9b3cc;
-  --color-stone-700: #c3cbdd;
-  --color-stone-800: #dde2ee;
-  --color-stone-900: #e8ecf5;
-  --color-stone-950: #f3f5fa;
-  --color-red-50: #3a1d26;
+  --background: #262624;
+  --foreground: #faf9f5;
+  --dot: 250 249 245;
+  --paper-rim: #3d3c38;
+  --paper-face: #34332f;
+  --ink: #faf9f5;
+  --ink-soft: #b0ada4;
+  --color-white: #30302e;
+  --color-stone-50: #2b2b29;
+  --color-stone-100: #3a3a37;
+  --color-stone-200: #45453f;
+  --color-stone-300: #57564f;
+  --color-stone-400: #8a8780;
+  --color-stone-500: #a6a39b;
+  --color-stone-600: #bfbcb3;
+  --color-stone-700: #d4d1c8;
+  --color-stone-800: #e8e6dd;
+  --color-stone-900: #faf9f5;
+  --color-stone-950: #ffffff;
+  --color-red-50: #3f2622;
   --color-red-600: #f87171;
-  --color-amber-50: #3a2f17;
+  --color-amber-50: #3d321c;
   --color-amber-800: #fcd34d;
   --color-emerald-700: #6ee7b7;
 }
