@@ -3,6 +3,41 @@
 :root {
   --background: #faf8f5;
   --foreground: #1c1917;
+  /* The board's dots and edge, as "r g b". */
+  --dot: 0 0 0;
+  /* The board tiles' paper on Home. */
+  --paper-rim: #fbf8f1;
+  --paper-face: #efe7d6;
+}
+
+/* The "Dark" theme (midnight), chosen in Home's menu. Light colours become
+   dark and dark ones light, so everything keeps its contrast. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0e1426;
+  --foreground: #e8ecf5;
+  --dot: 200 212 245;
+  --paper-rim: #2c3757;
+  --paper-face: #222c49;
+  --ink: #e8ecf5;
+  --ink-soft: #9aa5c2;
+  --color-white: #18213a;
+  --color-stone-50: #141c32;
+  --color-stone-100: #222c47;
+  --color-stone-200: #2e3a5a;
+  --color-stone-300: #3d4a6d;
+  --color-stone-400: #6b7899;
+  --color-stone-500: #8d99b8;
+  --color-stone-600: #a9b3cc;
+  --color-stone-700: #c3cbdd;
+  --color-stone-800: #dde2ee;
+  --color-stone-900: #e8ecf5;
+  --color-stone-950: #f3f5fa;
+  --color-red-50: #3a1d26;
+  --color-red-600: #f87171;
+  --color-amber-50: #3a2f17;
+  --color-amber-800: #fcd34d;
+  --color-emerald-700: #6ee7b7;
 }
 
 @theme inline {
@@ -127,4 +162,98 @@ body {
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* Dark theme: the board's default black ink (and its grey) shows light, in
+   texts, lines, labels and colour swatches, without changing what's saved. */
+html[data-theme="dark"] [stroke="#1c1917"] {
+  stroke: var(--ink);
+}
+html[data-theme="dark"] [fill="#1c1917"] {
+  fill: var(--ink);
+}
+html[data-theme="dark"] [stroke="#78716c"] {
+  stroke: var(--ink-soft);
+}
+html[data-theme="dark"] [fill="#78716c"],
+html[data-theme="dark"] [fill="#57534e"] {
+  fill: var(--ink-soft);
+}
+html[data-theme="dark"] [fill="white"] {
+  fill: var(--color-white);
+}
+/* (Styles are written either way by the browser: "color:#1c1917" or
+   "color: rgb(28, 25, 23)".) */
+html[data-theme="dark"] [style*="color:#1c1917"],
+html[data-theme="dark"] [style*="color: #1c1917"],
+html[data-theme="dark"] [style*="color: rgb(28, 25, 23)"] {
+  color: var(--ink) !important;
+}
+html[data-theme="dark"] [style*="background:#1c1917"],
+html[data-theme="dark"] [style*="background: #1c1917"],
+html[data-theme="dark"] [style*="background: rgb(28, 25, 23)"] {
+  background: var(--ink) !important;
+}
+html[data-theme="dark"] [style*="color:#78716c"],
+html[data-theme="dark"] [style*="color: #78716c"],
+html[data-theme="dark"] [style*="color: rgb(120, 113, 108)"] {
+  color: var(--ink-soft) !important;
+}
+html[data-theme="dark"] [style*="background:#78716c"],
+html[data-theme="dark"] [style*="background: #78716c"],
+html[data-theme="dark"] [style*="background: rgb(120, 113, 108)"] {
+  background: var(--ink-soft) !important;
+}
+/* Words on a light highlight (a text's fill) stay dark, so they can still be read. */
+html[data-theme="dark"] [style*="background-color:"],
+html[data-theme="dark"] [data-text][style*="background:"] {
+  color: #1c1917;
+}
+html[data-theme="dark"] [style*="background:"][style*="color:#1c1917"],
+html[data-theme="dark"] [style*="background:"] [style*="color:#1c1917"],
+html[data-theme="dark"] [style*="background:"][style*="color: #1c1917"],
+html[data-theme="dark"] [style*="background:"] [style*="color: #1c1917"],
+html[data-theme="dark"] [style*="background:"][style*="color: rgb(28, 25, 23)"],
+html[data-theme="dark"] [style*="background:"] [style*="color: rgb(28, 25, 23)"],
+html[data-theme="dark"] [style*="background-color:"][style*="color:#1c1917"],
+html[data-theme="dark"] [style*="background-color:"] [style*="color:#1c1917"],
+html[data-theme="dark"] [style*="background-color:"][style*="color: #1c1917"],
+html[data-theme="dark"] [style*="background-color:"] [style*="color: #1c1917"],
+html[data-theme="dark"] [style*="background-color:"][style*="color: rgb(28, 25, 23)"],
+html[data-theme="dark"] [style*="background-color:"] [style*="color: rgb(28, 25, 23)"] {
+  color: #1c1917 !important;
+}
+html[data-theme="dark"] [style*="background:"][style*="color:#78716c"],
+html[data-theme="dark"] [style*="background:"] [style*="color:#78716c"],
+html[data-theme="dark"] [style*="background:"][style*="color: #78716c"],
+html[data-theme="dark"] [style*="background:"] [style*="color: #78716c"],
+html[data-theme="dark"] [style*="background:"][style*="color: rgb(120, 113, 108)"],
+html[data-theme="dark"] [style*="background:"] [style*="color: rgb(120, 113, 108)"],
+html[data-theme="dark"] [style*="background-color:"][style*="color:#78716c"],
+html[data-theme="dark"] [style*="background-color:"] [style*="color:#78716c"],
+html[data-theme="dark"] [style*="background-color:"][style*="color: #78716c"],
+html[data-theme="dark"] [style*="background-color:"] [style*="color: #78716c"],
+html[data-theme="dark"] [style*="background-color:"][style*="color: rgb(120, 113, 108)"],
+html[data-theme="dark"] [style*="background-color:"] [style*="color: rgb(120, 113, 108)"] {
+  color: #78716c !important;
+}
+html[data-theme="dark"] .note blockquote {
+  border-color: var(--color-stone-300);
+  color: var(--color-stone-600);
+}
+html[data-theme="dark"] .note hr {
+  border-color: var(--color-stone-300);
+}
+html[data-theme="dark"] .note a {
+  color: #93c5fd;
+}
+html[data-theme="dark"] .note mark {
+  color: #1c1917;
+}
+html[data-theme="dark"] .note ul[data-type="taskList"] li > label input {
+  accent-color: var(--ink);
+}
+html[data-theme="dark"] .note ul[data-type="taskList"] li[data-checked="true"] > div,
+html[data-theme="dark"] .note p.is-editor-empty:first-child::before {
+  color: var(--color-stone-400);
 }

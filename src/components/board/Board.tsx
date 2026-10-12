@@ -1833,8 +1833,8 @@ export function Board({
             width: BOARD_W,
             height: BOARD_H,
             // Keep the edge line about 1 screen pixel at any zoom.
-            boxShadow: `0 0 0 ${px(1)}px rgb(0 0 0 / 0.12)`,
-            backgroundImage: `radial-gradient(circle, rgb(0 0 0 / ${dotAlpha}) 1px, transparent 1.2px)`,
+            boxShadow: `0 0 0 ${px(1)}px rgb(var(--dot) / 0.12)`,
+            backgroundImage: `radial-gradient(circle, rgb(var(--dot) / ${dotAlpha}) 1px, transparent 1.2px)`,
             backgroundSize: `${DOT_SPACING}px ${DOT_SPACING}px`,
           }}
         />

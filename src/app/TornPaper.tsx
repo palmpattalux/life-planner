@@ -86,9 +86,9 @@ export function TornPaper({ seed, children }: { seed: string; children: React.Re
             </filter>
           </defs>
           <path d={rim} fill="rgb(0 0 0 / 0.22)" transform="translate(0.8 1.6)" filter={`url(#shadow-${id})`} />
-          <path d={rim} fill="#fbf8f1" />
-          <path d={face} fill="#efe7d6" />
-          <path d={face} fill="#efe7d6" filter={`url(#grain-${id})`} />
+          <path d={rim} fill="var(--paper-rim)" />
+          <path d={face} fill="var(--paper-face)" />
+          <path d={face} fill="var(--paper-face)" filter={`url(#grain-${id})`} />
         </svg>
       )}
       <span className="relative block truncate text-sm font-medium text-stone-800">{children}</span>

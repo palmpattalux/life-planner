@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { getTheme, setTheme, type Theme } from "@/lib/theme";
 import { signOut } from "../actions";
 import { TrashList, type Boards } from "../BoardList";
 
-// The menu at the top right of Home: the trash (restore a board, or Empty
-// trash to delete them all for good) and Log out. Clicking anywhere else
+// The menu at the top right of Home: the theme (Light or Dark), the trash
+// (restore a board, or Empty trash to delete them all for good) and Log out. Clicking anywhere else
 // closes it.
 export function AccountMenu({ boards }: { boards: Boards }) {
   const [open, setOpen] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
+  const [theme, setThemeState] = useState<Theme>("light");
   const { trash } = boards;
 
   function emptyTrash() {
@@ -22,7 +24,10 @@ export function AccountMenu({ boards }: { boards: Boards }) {
     <div className="relative">
       <button
         aria-label="Menu"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setThemeState(getTheme());
+          setOpen((o) => !o);
+        }}
         className="rounded-md px-2.5 py-1 text-lg leading-none hover:bg-stone-100"
       >
         ☰
@@ -34,6 +39,25 @@ export function AccountMenu({ boards }: { boards: Boards }) {
             data-account-menu
             className="absolute right-0 top-full z-20 mt-1 w-72 rounded-md border border-stone-200 bg-white py-1 text-sm shadow-lg"
           >
+            <div data-theme-picker className="flex items-center justify-between gap-2 px-3 py-1.5">
+              Theme
+              <div className="flex rounded-md bg-stone-100 p-0.5">
+                {(["light", "dark"] as const).map((t) => (
+                  <button
+                    key={t}
+                    data-theme-choice={t}
+                    aria-pressed={theme === t}
+                    onClick={() => {
+                      setTheme(t);
+                      setThemeState(t);
+                    }}
+                    className={`rounded px-2.5 py-0.5 ${theme === t ? "bg-white font-medium shadow-sm" : "text-stone-500 hover:text-stone-900"}`}
+                  >
+                    {t === "light" ? "Light" : "Dark"}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               onClick={() => setShowTrash((t) => !t)}
               className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-stone-100"
