@@ -9,13 +9,13 @@ import { PhaseBox } from "./PhaseBox";
 import { TodayBox } from "./TodayBox";
 import { useSaved } from "./useSaved";
 
-// How long until the phase goal ends, for the faint line above the boards.
+// How long until the milestone ends, for the faint line above the boards.
 function countdown(p: Phase | null) {
   if (!p?.end) return null;
   const n = daysUntil(p.end);
-  if (n < 0) return "Phase goal ended";
-  if (n === 0) return "Last day of the phase goal";
-  return `${n} ${n === 1 ? "day" : "days"} until the phase goal ends`;
+  if (n < 0) return "Milestone ended";
+  if (n === 0) return "Last day of the milestone";
+  return `${n} ${n === 1 ? "day" : "days"} until the milestone ends`;
 }
 
 // Home: who's logged in on the left, a menu on the right (trash and Log out),
@@ -45,7 +45,7 @@ export function HomeView({ email }: { email?: string }) {
           <PhaseBox phase={phase.value} onChange={phase.change} />
           {phase.failed && (
             <p className="text-xs text-red-600">
-              Couldn&apos;t load or save the phase goal. If this keeps happening, the database may need its latest setup
+              Couldn&apos;t load or save the milestone. If this keeps happening, the database may need its latest setup
               (supabase/schema.sql).
             </p>
           )}

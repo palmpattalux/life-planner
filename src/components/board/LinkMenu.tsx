@@ -77,22 +77,22 @@ export function LinkMenu({
                   <button
                     data-add-today
                     onMouseEnter={() => setLevel(2)}
-                    onClick={() => add({ kind: "today" }, "today's to-do list")}
+                    onClick={() => add({ kind: "today" }, "today's to-do")}
                     className={choice}
                   >
-                    Today&apos;s to-do list
+                    Today&apos;s to-do
                   </button>
                   <div className="relative flex gap-1" onMouseEnter={() => open(3)}>
                     <button
                       data-add-phase
-                      onClick={() => add({ kind: "phase" }, "phase goal")}
+                      onClick={() => add({ kind: "phase" }, "milestone")}
                       className={choice}
                       style={{ animationDelay: "60ms" }}
                     >
-                      Phase goal
+                      Milestone
                     </button>
                     <button
-                      aria-label="Phase goal pages"
+                      aria-label="Milestone pages"
                       onClick={() => open(3)}
                       className="animate-pop rounded-md px-2 text-stone-500 hover:bg-stone-100"
                       style={{ animationDelay: "60ms" }}
@@ -102,11 +102,11 @@ export function LinkMenu({
                     {level >= 3 && (
                       <div className={`${flyout} -top-1`}>
                         <div data-task-pages className={`${box} w-52`}>
-                          <div className="px-2 py-1 text-xs text-stone-400">Add to a phase goal page</div>
+                          <div className="px-2 py-1 text-xs text-stone-400">Add to a milestone page</div>
                           {pages === null && <div className="px-2 py-1 text-sm text-stone-400">Loading…</div>}
                           {pages?.length === 0 && (
                             <div className="px-2 py-1 text-sm text-stone-400">
-                              No pages yet. Open a phase goal task&apos;s arrow on Home to make one.
+                              No pages yet. Open a milestone task&apos;s arrow on Home to make one.
                             </div>
                           )}
                           {pages?.map((p) => (

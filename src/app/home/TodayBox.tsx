@@ -33,14 +33,32 @@ export function TodayBox() {
   return (
     <section
       data-today
-      className={`${box} cursor-text`}
+      className={`${box} group cursor-text`}
       // Clicking anywhere in the box starts typing.
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest("button, input")) setFocus((n) => n + 1);
       }}
     >
-      <h2 className="font-semibold">Today&apos;s to-do list</h2>
-      <p className="mb-2 text-xs text-stone-400">This automatically resets every day</p>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-semibold">Today&apos;s to-do</h2>
+        {/* Past to-dos (each day's list, kept 30 days). */}
+        <button
+          type="button"
+          data-view-past
+          aria-label="Past to-dos"
+          title="Past to-dos"
+          aria-pressed={showPast}
+          onClick={togglePast}
+          className={`rounded-md p-1 transition ${showPast ? "bg-stone-900 text-white" : "text-stone-400 hover:bg-stone-100 hover:text-stone-800"}`}
+        >
+          <ArchiveIcon />
+        </button>
+      </div>
+      {/* Only while the pointer is over the box (or typing in it, on a phone). */}
+      <p className="h-0 overflow-hidden text-xs text-stone-400 opacity-0 transition-all group-focus-within:h-4 group-focus-within:opacity-100 group-hover:h-4 group-hover:opacity-100">
+        This automatically resets every day
+      </p>
+      <div className="mb-2" />
       {value === null ? (
         <p className="py-1 text-sm text-stone-400">{failed ? "Couldn't load your list." : "Loading…"}</p>
       ) : (
@@ -54,16 +72,9 @@ export function TodayBox() {
       {failed && value !== null && (
         <p className="mt-1 text-xs text-red-600">Couldn&apos;t save. Check your connection.</p>
       )}
-      <button
-        type="button"
-        data-view-past
-        onClick={togglePast}
-        className="mt-2 text-xs text-stone-400 underline-offset-2 hover:text-stone-700 hover:underline"
-      >
-        {showPast ? "Hide past to-do days" : "View past to-do days"}
-      </button>
       {showPast && (
         <div data-past-days className="mt-2 max-h-64 space-y-3 overflow-y-auto border-t border-stone-100 pt-2">
+          <div className="text-sm font-semibold">Past to-dos</div>
           {past === null && <p className="text-sm text-stone-400">Loading…</p>}
           {past?.length === 0 && (
             <p className="text-sm text-stone-400">No past days yet (they&apos;re kept 30 days).</p>
@@ -88,5 +99,24 @@ export function TodayBox() {
         </div>
       )}
     </section>
+  );
+}
+
+function ArchiveIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      strokeLinecap="round"
+    >
+      <rect x="1.5" y="2.5" width="13" height="3.5" rx="0.8" />
+      <path d="M2.8 6 V12.7 a0.8 0.8 0 0 0 0.8 0.8 H12.4 a0.8 0.8 0 0 0 0.8 -0.8 V6" />
+      <path d="M6.3 8.7 H9.7" />
+    </svg>
   );
 }

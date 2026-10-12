@@ -97,7 +97,7 @@ export function PhaseBox({ phase, onChange }: { phase: Phase | null; onChange: (
         onClick={() => Date.now() - closedAt.current > 300 && setPicking(true)}
         className="w-full rounded-t-2xl border-b border-stone-100 px-4 py-3 text-left transition hover:bg-stone-50"
       >
-        <span className="font-semibold">Phase goal</span>{" "}
+        <span className="font-semibold">Milestone</span>{" "}
         {dates ? (
           <span className="text-sm text-stone-600">
             {dates[0]} → {dates[1]}
