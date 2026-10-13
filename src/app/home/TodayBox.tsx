@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckMark } from "@/components/board/icons";
 import { INK } from "@/components/board/constants";
 import {
+  keepsForever,
   loadDay,
   loadPastDays,
   loadToday,
@@ -24,7 +25,7 @@ const box = "rounded-2xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.08)]";
 // kept with its date (see Past to-dos) for 30 days. The Tomorrow switch shows
 // tomorrow's list instead, to write ahead (the box glows like sunlight); at
 // midnight it becomes today's.
-export function TodayBox() {
+export function TodayBox({ email }: { email?: string }) {
   const supabase = useMemo(createClient, []);
   const { value, change, failed, refresh } = useSaved<Day>(
     "today",
@@ -102,7 +103,7 @@ export function TodayBox() {
               />
             </span>
           </button>
-          {/* Past to-dos (each day's list, kept 30 days). */}
+          {/* Past to-dos (each day's list, kept 30 days, or forever for some accounts). */}
           <button
             type="button"
             data-view-past
@@ -140,7 +141,9 @@ export function TodayBox() {
           <div className="text-sm font-semibold">Past to-dos</div>
           {past === null && <p className="text-sm text-stone-400">Loading…</p>}
           {past?.length === 0 && (
-            <p className="text-sm text-stone-400">No past days yet (they&apos;re kept 30 days).</p>
+            <p className="text-sm text-stone-400">
+              No past days yet{keepsForever(email) ? "." : " (they're kept 30 days)."}
+            </p>
           )}
           {past?.map((d) => (
             <div key={d.day}>

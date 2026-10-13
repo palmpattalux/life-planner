@@ -55,7 +55,7 @@ export function HomeView({ email }: { email?: string }) {
           data-planner
           className="flex w-full flex-col gap-4 sm:max-w-sm xl:-mx-4 xl:-mt-4 xl:w-auto xl:max-w-none xl:overflow-y-auto xl:p-4"
         >
-          <TodayBox />
+          <TodayBox email={email} />
           <PhaseBox phase={phase.value} onChange={phase.change} />
           {phase.failed && (
             <p className="text-xs text-red-600">

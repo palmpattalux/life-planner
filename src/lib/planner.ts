@@ -14,8 +14,11 @@ export type Phase = { unit: PhaseUnit | null; start: string | null; end: string 
 export const EMPTY_PHASE: Phase = { unit: null, start: null, end: null, tasks: [] };
 export type Day = { day: string; items: Task[] };
 
-// Past to-do days are kept this long, then deleted.
+// Past to-do days are kept this long, then deleted, except for these
+// accounts, whose past to-dos are kept forever.
 export const KEEP_DAYS = 30;
+const KEEP_FOREVER = ["palmst11@gmail.com"];
+export const keepsForever = (email?: string | null) => !!email && KEEP_FOREVER.includes(email.toLowerCase());
 
 // A date as "YYYY-MM-DD", in this device's time zone.
 export function localDate(d: Date) {
@@ -68,11 +71,14 @@ export async function saveDay(sb: SupabaseClient, day: string, items: Task[]) {
 }
 
 // The days before today that have tasks, newest first. Days older than
-// KEEP_DAYS are deleted first.
+// KEEP_DAYS are deleted first (unless the account keeps them forever).
 export async function loadPastDays(sb: SupabaseClient): Promise<Day[]> {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - KEEP_DAYS);
-  await sb.from("todo_days").delete().lt("day", localDate(cutoff));
+  const { data: auth } = await sb.auth.getUser();
+  if (!keepsForever(auth.user?.email)) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - KEEP_DAYS);
+    await sb.from("todo_days").delete().lt("day", localDate(cutoff));
+  }
   const { data, error } = await sb
     .from("todo_days")
     .select("day, items")
