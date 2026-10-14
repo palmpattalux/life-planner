@@ -1,5 +1,5 @@
 import { fullBoard, type BoardData } from "@/components/board/model";
-import { INK } from "@/components/board/constants";
+import { INK, LINE_WIDTH } from "@/components/board/constants";
 
 // A small, slightly blurred picture of what's on a board, for its box on
 // Home: its circles, squares, texts, lines and pictures.
@@ -65,7 +65,7 @@ export function BoardPreview({ data }: { data: BoardData | null }) {
           points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
           fill="none"
           stroke={l.color ?? INK}
-          strokeWidth={stroke}
+          strokeWidth={(stroke * (l.width ?? LINE_WIDTH)) / LINE_WIDTH}
         />
       ))}
       {d.texts.map((t) => {

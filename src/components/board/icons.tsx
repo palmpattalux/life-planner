@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { LINE_WIDTHS } from "./constants";
 
 // Small icons used in the menus.
 
@@ -141,6 +142,27 @@ export function LayerButton({ onFront, onBack }: { onFront: () => void; onBack: 
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Choosing how thick a line is: one short sample line per thickness.
+export function LineWidths({ value, onPick }: { value?: number; onPick: (width: number) => void }) {
+  return (
+    <div data-line-widths className="flex items-center gap-1 px-1 py-1">
+      {LINE_WIDTHS.map((w) => (
+        <button
+          key={w}
+          type="button"
+          data-line-width={w}
+          aria-label={`Thickness ${w}`}
+          aria-pressed={value === w}
+          onClick={() => onPick(w)}
+          className={`flex h-6 w-7 items-center justify-center rounded ${value === w ? "bg-stone-200" : "hover:bg-stone-100"}`}
+        >
+          <span className="block w-4 rounded-full bg-stone-900" style={{ height: Math.max(1, w * 0.8) }} />
+        </button>
+      ))}
     </div>
   );
 }

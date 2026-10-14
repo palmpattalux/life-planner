@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { INK, TEXT_COLORS } from "./constants";
-import { LinkButton } from "./icons";
+import { LineWidths, LinkButton } from "./icons";
 import { LIMITS, MONTHS, timelineTicks, type Timeline, type TimeUnit } from "./timeline";
 
 const UNITS: { unit: TimeUnit; label: string }[] = [
@@ -28,6 +28,8 @@ export function LineMenu({
   onAngle,
   onText,
   onColor,
+  width,
+  onWidth,
 }: {
   time?: Timeline;
   color?: string;
@@ -35,6 +37,8 @@ export function LineMenu({
   onAngle: () => void;
   onText: () => void;
   onColor: (color: string) => void;
+  width: number;
+  onWidth: (width: number) => void;
 }) {
   const [step, setStep] = useState<"menu" | "unit" | "range" | "monthStart" | "monthEnd">("menu");
   const [unit, setUnit] = useState<TimeUnit>(time?.unit ?? "day");
@@ -95,6 +99,7 @@ export function LineMenu({
               ))}
             </div>
           )}
+          <LineWidths value={width} onPick={onWidth} />
           <LinkButton />
         </>
       )}

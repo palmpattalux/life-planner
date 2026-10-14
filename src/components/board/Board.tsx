@@ -11,6 +11,8 @@ import {
   CLICK_SLOP,
   DOT_SPACING,
   INK,
+  LINE_WIDTH,
+  LINE_WIDTHS,
   LINE_LABEL_SIZE,
   MAJOR_TICK,
   NOW_RED,
@@ -58,7 +60,7 @@ import {
   type Box,
   type Point,
 } from "./geometry";
-import { CheckMark, ChecklistIcon, LayerButton, LinkButton, PinIcon, SquareIcon } from "./icons";
+import { CheckMark, ChecklistIcon, LayerButton, LineWidths, LinkButton, PinIcon, SquareIcon } from "./icons";
 import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
 import { LinkMenu, type AddTarget, type TaskPage } from "./LinkMenu";
@@ -1989,7 +1991,8 @@ export function Board({
     groupOf(selection[0]) !== undefined &&
     selection.every((k) => groupOf(k) === groupOf(selection[0])) &&
     withGroups(selection, board).length === selection.length;
-  const arrowheadFor = (l: Line) => `url(#arrowhead-${Math.max(0, TEXT_COLORS.indexOf(l.color ?? INK))})`;
+  const arrowheadFor = (l: Line) =>
+    `url(#arrowhead-${Math.max(0, TEXT_COLORS.indexOf(l.color ?? INK))}-${LINE_WIDTHS.includes(l.width ?? LINE_WIDTH) ? (l.width ?? LINE_WIDTH) : LINE_WIDTH})`;
   const toPolyline = (pts: Point[]) => pts.map((p) => `${p.x},${p.y}`).join(" ");
   const px = (n: number) => n / view.scale; // a size in screen pixels, in board units
 
@@ -2032,21 +2035,28 @@ export function Board({
 
         <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={BOARD_W} height={BOARD_H}>
           <defs>
-            {/* One arrowhead per line colour. */}
-            {TEXT_COLORS.map((color, i) => (
-              <marker
-                key={color}
-                id={`arrowhead-${i}`}
-                viewBox="0 0 10 10"
-                refX="8"
-                refY="5"
-                markerWidth="5"
-                markerHeight="5"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L10,5 L0,10 z" fill={color} />
-              </marker>
-            ))}
+            {/* One arrowhead per line colour and thickness (thicker lines get
+                bigger arrowheads, but not as much bigger as the line). */}
+            {TEXT_COLORS.flatMap((color, i) =>
+              LINE_WIDTHS.map((w) => {
+                // Rounded, so the server and the browser write the same number.
+                const size = Math.round(((10 * (w / LINE_WIDTH) ** 0.75) / w) * 100) / 100;
+                return (
+                  <marker
+                    key={`${color}-${w}`}
+                    id={`arrowhead-${i}-${w}`}
+                    viewBox="0 0 10 10"
+                    refX="8"
+                    refY="5"
+                    markerWidth={size}
+                    markerHeight={size}
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M0,0 L10,5 L0,10 z" fill={color} />
+                  </marker>
+                );
+              }),
+            )}
           </defs>
           {lines
             .map((l) => resolve(l))
@@ -2072,7 +2082,7 @@ export function Board({
                       d={bracketPath(pts, l.bracket, BRACKET_CURL)}
                       fill="none"
                       stroke={l.color ?? INK}
-                      strokeWidth={2}
+                      strokeWidth={l.width ?? LINE_WIDTH}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />
@@ -2082,7 +2092,7 @@ export function Board({
                       points={toPolyline(pts)}
                       fill="none"
                       stroke={l.color ?? INK}
-                      strokeWidth={2}
+                      strokeWidth={l.width ?? LINE_WIDTH}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       markerStart={l.fromArrow ? arrowheadFor(l) : undefined}
@@ -2096,7 +2106,7 @@ export function Board({
                     points={toPolyline(pts)}
                     fill="none"
                     stroke="transparent"
-                    strokeWidth={px(14)}
+                    strokeWidth={Math.max(px(14), (l.width ?? LINE_WIDTH) + px(8))}
                     className="cursor-grab active:cursor-grabbing"
                     style={{ pointerEvents: "stroke" }}
                     onPointerDown={(e) => {
@@ -2532,6 +2542,8 @@ export function Board({
                     time={l.time}
                     color={l.color}
                     onColor={(color) => updateLine(l.id, { color })}
+                    width={l.width ?? LINE_WIDTH}
+                    onWidth={(width) => updateLine(l.id, { width })}
                     onDone={(time) => {
                       updateLine(l.id, { time });
                       setSelection([]);
@@ -2900,6 +2912,24 @@ export function Board({
             >
               {isOneGroup ? "Ungroup" : "Group"}
             </button>
+            {/* Only lines selected: one thickness for them all. */}
+            {selection.every((k) => k.startsWith("line:")) && (
+              <div className="rounded-md border border-stone-200 bg-white shadow">
+                <LineWidths
+                  value={(() => {
+                    const ws = new Set(
+                      lines.filter((l) => selection.includes(keyOf("line", l.id))).map((l) => l.width ?? LINE_WIDTH),
+                    );
+                    return ws.size === 1 ? [...ws][0] : undefined;
+                  })()}
+                  onPick={(width) => {
+                    commit();
+                    const ids = idsOf(selection, "line");
+                    setLines((ls) => ls.map((l) => (ids.has(l.id) ? { ...l, width } : l)));
+                  }}
+                />
+              </div>
+            )}
             {/* One colour for everything selected. */}
             <div
               data-group-colors

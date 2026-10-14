@@ -28,6 +28,7 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 - With several things selected, the **Save preset** button in the top right saves them as a preset (Preset 1, Preset 2, ...). Presets belong to you, so they can be used on any board.
 - The keys t, v, b, n and m can be changed in Home's menu (Shortcuts).
 - Press **v** for view mode: nothing on the board can be changed, and hovering a text makes it bigger to read. A switch at the top shows it's on; press **v**, Escape or the switch to leave.
+- Clicking a line shows thickness choices in its menu; selecting only lines shows them beside the selection box, for all of them at once.
 - Press **m** to open the menu on the right (press **m** again to close it). Its **Preset** button drops down every saved preset with **Use** (places a copy in the middle of the screen), **Edit** (places it, and the top right button becomes **Update preset**: select what the preset should be and press it to save over the old one) and **Delete**.
 - Click something (or select several) and press **Ctrl+C** (Cmd+C) to copy, then **Ctrl+V** (Cmd+V) to paste a copy at the cursor.
 - A picture copied from outside the site (for example **Copy image** in a browser) pastes onto the board with **Ctrl+V** (Cmd+V). Drag it to move it; scroll or pinch while it's selected to resize it.

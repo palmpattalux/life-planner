@@ -73,6 +73,7 @@ export type Line = {
   time?: Timeline;
   label?: string; // text in the middle of the line
   color?: string; // the line, its arrowheads and timeline marks (default ink)
+  width?: number; // how thick the line is drawn (default LINE_WIDTH)
   // Pinned timeline marks, by their value (as in `time`): drawn bigger
   // (when bold) and in their own colour.
   pins?: Pin[];

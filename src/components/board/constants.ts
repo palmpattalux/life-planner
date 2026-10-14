@@ -13,6 +13,9 @@ export const MAX_PICTURE = 6000;
 export const TOP_LAYER = 1_000_000;
 export const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
 export const INK = "#1c1917";
+// How thick lines are drawn, and the thicknesses a line can be given.
+export const LINE_WIDTH = 2;
+export const LINE_WIDTHS = [1, 2, 4, 6, 10];
 // Background fills a text (or highlighted words) can have. New texts have none.
 export const TEXT_FILLS = ["#fef08a", "#fed7aa", "#bbf7d0", "#bfdbfe", "#e9d5ff", "#fbcfe8", "#e7e5e4"];
 export const SELECT_BLUE = "#3b82f6";
