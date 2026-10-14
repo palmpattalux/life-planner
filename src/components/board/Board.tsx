@@ -2739,17 +2739,11 @@ export function Board({
                                   width: "0.85em",
                                   height: "0.85em",
                                   marginRight: "0.3em",
-                                  border: `${t.deadline ? 0.12 : 0.09}em solid ${boxColor}`,
-                                  // A priority task's ticked box is filled, with a white tick.
-                                  background: t.deadline && line[0] === CHECKED ? boxColor : undefined,
+                                  // A priority task's box (and tick) is white.
+                                  border: `0.09em solid ${t.deadline ? "#fff" : boxColor}`,
                                 }}
                               >
-                                {line[0] === CHECKED &&
-                                  (t.deadline ? (
-                                    <CheckMark color="#fff" width={2.2} />
-                                  ) : (
-                                    <CheckMark color={boxColor} />
-                                  ))}
+                                {line[0] === CHECKED && <CheckMark color={t.deadline ? "#fff" : boxColor} />}
                               </span>
                             </span>
                           )}
