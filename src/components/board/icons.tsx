@@ -166,3 +166,20 @@ export function LineWidths({ value, onPick }: { value?: number; onPick: (width: 
     </div>
   );
 }
+
+export function TrashIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 4.5 H13.5 M6 4.5 V3 a1 1 0 0 1 1 -1 H9 a1 1 0 0 1 1 1 V4.5 M4 4.5 L4.7 13 a1 1 0 0 0 1 1 H10.3 a1 1 0 0 0 1 -1 L12 4.5" />
+    </svg>
+  );
+}

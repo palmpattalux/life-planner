@@ -168,6 +168,32 @@ export async function putPriorityTask(sb: SupabaseClient, t: Linked, deadline: s
   await savePriority(sb, tasks);
 }
 
+// Delete a priority task for good: off Home's list, and (for a board's
+// deadline task) its text off every board too.
+export async function removePriorityTask(sb: SupabaseClient, link: string) {
+  const tasks = await loadPriority(sb);
+  if (tasks.some((t) => t.link === link))
+    await savePriority(
+      sb,
+      tasks.filter((t) => t.link !== link),
+    );
+}
+
+export async function removeLinkedBoardTexts(sb: SupabaseClient, link: string) {
+  const { data, error } = await sb.from("pages").select("id, content").eq("kind", "board");
+  if (error) throw error;
+  for (const page of data ?? []) {
+    const texts = (page.content as { texts?: { link?: string }[] } | null)?.texts;
+    if (!texts?.some((t) => t.link === link)) continue;
+    const content = { ...page.content, texts: texts.filter((t) => t.link !== link) };
+    const { error: saveError } = await sb
+      .from("pages")
+      .update({ content, updated_at: new Date().toISOString() })
+      .eq("id", page.id);
+    if (saveError) throw saveError;
+  }
+}
+
 // The phase goal's tasks that have their own page.
 export async function phaseTaskPages(sb: SupabaseClient): Promise<TaskPage[]> {
   const phase = await loadPhase(sb);

@@ -60,7 +60,7 @@ import {
   type Box,
   type Point,
 } from "./geometry";
-import { CheckMark, ChecklistIcon, LayerButton, LineWidths, LinkButton, PinIcon, SquareIcon } from "./icons";
+import { CheckMark, ChecklistIcon, LayerButton, LineWidths, LinkButton, PinIcon, SquareIcon, TrashIcon } from "./icons";
 import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
 import { LinkMenu, type AddTarget, type TaskPage } from "./LinkMenu";
@@ -148,6 +148,8 @@ export type Planner = {
   taskPages: () => Promise<TaskPage[]>;
   // A linked text's first checkbox was ticked or unticked on the board.
   onCheck: (link: string, done: boolean) => void;
+  // A deadline task's text was deleted: delete its priority task too.
+  removePriority?: (link: string) => Promise<void>;
 };
 
 export function Board({
@@ -2492,6 +2494,23 @@ export function Board({
                       ))}
                     </div>
                     {layerButton(keyOf("text", t.id))}
+                    {/* A deadline task: delete it for good, here and on Home. */}
+                    {t.deadline && (
+                      <button
+                        data-delete-deadline
+                        onClick={() => {
+                          if (!window.confirm("Delete this deadline task for good? It's removed from Home too."))
+                            return;
+                          setSelection([]);
+                          removeKeys([keyOf("text", t.id)]);
+                          if (t.link) void planner?.removePriority?.(t.link).catch(() => {});
+                        }}
+                        className="flex items-center gap-2 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <TrashIcon />
+                        Delete
+                      </button>
+                    )}
                     {planner ? (
                       <LinkMenu onAdd={(to) => addTextTo(t, to)} taskPages={planner.taskPages} />
                     ) : (

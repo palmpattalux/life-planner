@@ -7,6 +7,7 @@ import { fullBoard, type BoardData, type Preset } from "@/components/board/model
 import {
   addPhaseTask,
   putPriorityTask,
+  removePriorityTask,
   addTaskToPage,
   addToToday,
   linkStates,
@@ -81,6 +82,7 @@ export function BoardPage({
     },
     taskPages: () => phaseTaskPages(supabase),
     onCheck: (link, done) => void setLinkDone(supabase, link, done).catch(() => {}),
+    removePriority: (link) => removePriorityTask(supabase, link),
   };
 
   async function savePreset(data: BoardData) {

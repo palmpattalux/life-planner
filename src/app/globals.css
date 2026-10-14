@@ -92,8 +92,24 @@ body {
 }
 [data-viewing] [data-text]:hover,
 [data-viewing] [data-line-label]:hover {
+  position: relative;
   transform: scale(1.8);
   z-index: 1000000 !important;
+}
+/* A soft frosted patch behind the enlarged text, so what's under it doesn't
+   get in the way. */
+[data-viewing] [data-text]:not([style*="background:"]):hover::before,
+[data-viewing] [data-line-label]:hover::before {
+  content: "";
+  position: absolute;
+  inset: -0.3em -0.5em;
+  z-index: -1;
+  border-radius: 0.6em;
+  background: color-mix(in srgb, var(--background) 55%, transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 0 12px 6px color-mix(in srgb, var(--background) 45%, transparent);
+  pointer-events: none;
 }
 
 /* A task page's notes (TipTap). */
