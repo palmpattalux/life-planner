@@ -20,6 +20,7 @@ export function Popup({
   mouse,
   view,
   origin = { x: 0, y: 0 },
+  prefer,
   children,
   ...rest
 }: {
@@ -29,6 +30,8 @@ export function Popup({
   // Where the box this is placed in starts on the board (when inside a
   // positioned element).
   origin?: Point;
+  // A side to use whenever it has room, wherever the mouse is.
+  prefer?: "left" | "right";
   children: React.ReactNode;
 } & React.HTMLAttributes<HTMLDivElement>) {
   const ref = useRef<HTMLDivElement>(null);
@@ -62,12 +65,14 @@ export function Popup({
     const clampY = (y: number) => Math.min(Math.max(y, EDGE), H - h - EDGE);
     const fits = (p: Point) => p.x >= EDGE && p.y >= EDGE && p.x + w <= W - EDGE && p.y + h <= H - EDGE;
     // Beside the thing, level with the mouse along that side.
-    const sides = [
-      { x: b.x + GAP, y: clampY(m.y - 16) },
-      { x: a.x - GAP - w, y: clampY(m.y - 16) },
-      { x: clampX(m.x - w / 2), y: b.y + GAP },
-      { x: clampX(m.x - w / 2), y: a.y - GAP - h },
-    ].filter(fits);
+    const right = { x: b.x + GAP, y: clampY(m.y - 16) };
+    const left = { x: a.x - GAP - w, y: clampY(m.y - 16) };
+    const preferred = prefer === "left" ? left : prefer === "right" ? right : null;
+    const sides = (
+      preferred && fits(preferred)
+        ? [preferred]
+        : [right, left, { x: clampX(m.x - w / 2), y: b.y + GAP }, { x: clampX(m.x - w / 2), y: a.y - GAP - h }]
+    ).filter(fits);
     // How far the mouse is from a pop-up placed at p.
     const far = (p: Point) => Math.hypot(Math.max(p.x - m.x, 0, m.x - p.x - w), Math.max(p.y - m.y, 0, m.y - p.y - h));
     at = sides.sort((p, q) => far(p) - far(q))[0] ?? { x: clampX(m.x + 16), y: clampY(m.y + 16) };

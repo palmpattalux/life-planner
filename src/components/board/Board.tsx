@@ -2212,8 +2212,8 @@ export function Board({
   const toPolyline = (pts: Point[]) => pts.map((p) => `${p.x},${p.y}`).join(" ");
   const px = (n: number) => n / view.scale; // a size in screen pixels, in board units
 
-  // A timeline's own menu (Phase, Priority task, colours, Pin), shown beside
-  // its line menu.
+  // A timeline's own menu (Phase, Priority task, colours, Pin), shown on the
+  // other side of the timeline from its line menu.
   function timelineMenu() {
     if (!selectedLine || phase) return null;
     const { labels } = timelineGeometry(selectedLine);
@@ -2904,15 +2904,27 @@ export function Board({
             return (
               <>
                 {/* The menu goes underneath the handles so it never hides an end. */}
+                {/* A timeline's own menu goes on its left, the line menu (Time)
+                    on its right, unless there's no room on that side. */}
+                {timelineMenu() && (
+                  <Popup
+                    key={`timeline-${l.id}`}
+                    prefer="left"
+                    around={grow(boxAround(pts), px(40))}
+                    mouse={pointer.current}
+                    view={view}
+                  >
+                    {timelineMenu()}
+                  </Popup>
+                )}
                 <Popup
                   key={l.id}
                   // Clear of the line's ends and their arrow buttons.
                   around={grow(boxAround(pts), px(40))}
                   mouse={pointer.current}
                   view={view}
-                  className="flex items-start gap-2"
+                  prefer={timelineMenu() ? "right" : undefined}
                 >
-                  {timelineMenu()}
                   <LineMenu
                     key={l.id}
                     time={l.time}

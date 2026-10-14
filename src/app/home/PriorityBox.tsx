@@ -187,7 +187,7 @@ function ClockIcon() {
 
 // The time left until each priority task's deadline (not ticked ones), down
 // the right of Home, soonest first: the time left above the task. They lift
-// a little and glow (with a soft tap) when hovered. Kept up to the
+// a little (with a soft tap) when hovered. Kept up to the
 // minute.
 export function Deadlines({ tasks }: { tasks: Task[] | null }) {
   const [now, setNow] = useState(() => Date.now());
@@ -210,7 +210,7 @@ export function Deadlines({ tasks }: { tasks: Task[] | null }) {
             key={t.id}
             data-deadline-countdown
             data-pop
-            className="w-full rounded-xl px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 hover:scale-[1.03] hover:shadow-[0_0_18px_4px_rgba(251,191,36,0.35)]"
+            className="w-full rounded-xl px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 hover:scale-[1.03]"
           >
             <p className={`text-[11px] font-medium ${tone}`}>{timeLeft(ms)}</p>
             <p className="truncate text-sm text-stone-800">{t.text}</p>
