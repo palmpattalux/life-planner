@@ -5,7 +5,7 @@ import { ChainIcon } from "./icons";
 
 // Where a text on the board can be added as a task.
 // "priority": Home's Priority tasks, with a deadline (from a timeline's
-// "Deadline task").
+// "Priority task").
 export type AddTarget =
   { kind: "today" } | { kind: "phase" } | { kind: "page"; id: string } | { kind: "priority"; deadline: string };
 export type TaskPage = { id: string; title: string };
@@ -60,7 +60,7 @@ export function LinkMenu({
         className={`${row} ${level ? "bg-stone-100" : "hover:bg-stone-100"}`}
       >
         <ChainIcon />
-        {done ?? "Link"}
+        {done}
       </button>
       {level >= 1 && (
         <div className={flyout}>

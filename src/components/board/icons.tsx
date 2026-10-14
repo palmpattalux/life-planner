@@ -40,8 +40,43 @@ export function LinkButton() {
       className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
     >
       <ChainIcon />
-      Link
     </button>
+  );
+}
+
+// An L-shaped corner with the bend handle (a small diamond) at its corner,
+// as on a line with an angle.
+export function AngleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M3.5 1.5 V12.5 H14.5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect
+        x="1.6"
+        y="10.6"
+        width="3.8"
+        height="3.8"
+        transform="rotate(45 3.5 12.5)"
+        fill="var(--color-white, white)"
+        strokeWidth="1.2"
+      />
+    </svg>
+  );
+}
+
+export function ClockIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    >
+      <circle cx="8" cy="8" r="6.25" />
+      <path d="M8 4.5 V8 L10.5 9.5" />
+    </svg>
   );
 }
 
@@ -146,21 +181,24 @@ export function LayerButton({ onFront, onBack }: { onFront: () => void; onBack: 
   );
 }
 
+// The sample lines' heights, from thinnest to thickest.
+const SAMPLE_HEIGHTS = [1, 1.6, 3.2, 4.8, 8];
+
 // Choosing how thick a line is: one short sample line per thickness.
 export function LineWidths({ value, onPick }: { value?: number; onPick: (width: number) => void }) {
   return (
     <div data-line-widths className="flex items-center gap-1 px-1 py-1">
-      {LINE_WIDTHS.map((w) => (
+      {LINE_WIDTHS.map((w, i) => (
         <button
           key={w}
           type="button"
           data-line-width={w}
-          aria-label={`Thickness ${w}`}
+          aria-label={`Thickness ${i + 1}`}
           aria-pressed={value === w}
           onClick={() => onPick(w)}
           className={`flex h-6 w-7 items-center justify-center rounded ${value === w ? "bg-stone-200" : "hover:bg-stone-100"}`}
         >
-          <span className="block w-4 rounded-full bg-stone-900" style={{ height: Math.max(1, w * 0.8) }} />
+          <span className="block w-4 rounded-full bg-stone-900" style={{ height: SAMPLE_HEIGHTS[i] }} />
         </button>
       ))}
     </div>

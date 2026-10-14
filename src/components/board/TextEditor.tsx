@@ -49,11 +49,12 @@ function pointAt(el: HTMLElement, n: number): { node: Node; offset: number } {
   return found ?? { node: el, offset: el.childNodes.length };
 }
 
-// The text being typed. Enter starts a new line; clicking elsewhere confirms it.
+// The text being typed. Enter (or clicking elsewhere) confirms it; a space
+// then Enter starts a new line.
 // Tab moves the caret's line right and Shift+Tab moves it back. With `lists`,
-// Enter on a checklist line starts the next line with a box, and on a numbered
-// line with the next number. Enter on a line holding only the box or number
-// ends the list; the same goes for bullet points, which "-" then a space
+// a new line from a checklist line starts with a box, and from a numbered
+// line with the next number. Space then Enter on a line holding only the box
+// or number ends the list; the same goes for bullet points, which "-" then a space
 // starts. With `initialRuns`, a bar shows above the text while something is
 // highlighted: bold (or Ctrl+B), colours, background fills, and turning the
 // highlighted lines into a numbered list, bullet points or a checklist.
@@ -249,7 +250,14 @@ export function TextEditor({
           }
           if (e.key === "Enter") {
             e.preventDefault();
-            const full = lists ? textBeforeCaret(e.currentTarget) : "";
+            const before = textBeforeCaret(e.currentTarget);
+            // Enter on its own confirms the text. A space then Enter starts a
+            // new line instead (the space goes).
+            if (!before.endsWith(" ")) {
+              e.currentTarget.blur();
+              return;
+            }
+            const full = lists ? before : "";
             const indent = full.match(/^ */)![0];
             const line = full.slice(indent.length);
             const number = line.match(/^(\d+)\. /);
@@ -265,6 +273,7 @@ export function TextEditor({
               for (let i = 0; i < line.length; i++) document.execCommand("delete");
               return;
             }
+            document.execCommand("delete");
             document.execCommand("insertLineBreak");
             // A list line keeps its indent on the next line.
             if (marker) document.execCommand("insertText", false, indent + marker);

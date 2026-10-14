@@ -157,7 +157,7 @@ export async function savePriority(sb: SupabaseClient, tasks: Task[]) {
   if (error) throw error;
 }
 
-// A board's deadline task on Home's Priority tasks: added the first time,
+// A board's priority task on Home's Priority tasks: added the first time,
 // and its words kept up to date after that.
 export async function putPriorityTask(sb: SupabaseClient, t: Linked, deadline: string) {
   await setLinkDone(sb, t.link, t.done);
@@ -169,7 +169,7 @@ export async function putPriorityTask(sb: SupabaseClient, t: Linked, deadline: s
 }
 
 // Delete a priority task for good: off Home's list, and (for a board's
-// deadline task) its text off every board too.
+// priority task) its text off every board too.
 export async function removePriorityTask(sb: SupabaseClient, link: string) {
   const tasks = await loadPriority(sb);
   if (tasks.some((t) => t.link === link))

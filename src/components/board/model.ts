@@ -38,7 +38,7 @@ export type Text = {
   // Added to Home's to-do list or the phase goal: the text's first checkbox
   // is ticked and unticked together with the task there (see lib/planner).
   link?: string;
-  // A deadline task made from a timeline: which timeline and the deadline (an
+  // A priority task made from a timeline: which timeline and the deadline (an
   // ISO date and time). The text only slides across that timeline, staying
   // level with its date.
   deadline?: { line: number; at: string };
@@ -57,9 +57,9 @@ export type Picture = {
   group?: number;
   z?: number;
 };
-// A line end is either a free point or attached to a circle or text
-// (fromItem / toItem), in which case it sits at that item's centre and
-// follows it. `bends` are the angle points between the two ends.
+// A line end is either a free point or attached to a circle, text or square
+// (fromItem / toItem), in which case it sits at that item's centre (on a
+// square: on its outline) and follows it. `bends` are the angle points between the two ends.
 // A line with `time` is drawn as a timeline: a ruler of evenly spaced dates.
 export type Line = {
   id: number;
@@ -67,6 +67,10 @@ export type Line = {
   to: Point;
   fromItem?: number;
   toItem?: number;
+  // An end attached to a square sits on its outline, here: where across and
+  // down the square, from its middle (-0.5 to 0.5 of its width and height).
+  fromRim?: Point;
+  toRim?: Point;
   bends?: Point[];
   fromArrow?: boolean;
   toArrow?: boolean;

@@ -13,9 +13,13 @@ export const MAX_PICTURE = 6000;
 export const TOP_LAYER = 1_000_000;
 export const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
 export const INK = "#1c1917";
-// How thick lines are drawn, and the thicknesses a line can be given.
+// The one standard thickness for everything drawn with a line (lines,
+// timelines, circles and squares), and the five thicknesses a line can be
+// given: the standard one is the middle (3rd) choice.
 export const LINE_WIDTH = 2;
-export const LINE_WIDTHS = [1, 2, 4, 6, 10];
+export const LINE_WIDTHS = [1, 1.5, LINE_WIDTH, 3, 5];
+// Thicknesses lines could be given before, which saved boards may still have.
+export const OLD_LINE_WIDTHS = [4, 6, 10];
 // Background fills a text (or highlighted words) can have. New texts have none.
 export const TEXT_FILLS = ["#fef08a", "#fed7aa", "#bbf7d0", "#bfdbfe", "#e9d5ff", "#fbcfe8", "#e7e5e4"];
 export const SELECT_BLUE = "#3b82f6";
@@ -28,6 +32,8 @@ export const INDENT = "    ";
 export const PHASE_ORANGE = "#f97316";
 // The arrow on every timeline at today's date ("Now").
 export const NOW_RED = "#ef4444";
+// How far a priority task's line reaches out each side of its timeline.
+export const DEADLINE_MARK = 18;
 // How far a new phase sits from the timeline it was made from, in board units.
 export const PHASE_GAP = 48;
 export const PHASE_GAP_PAST_LABELS = 72;
@@ -41,9 +47,16 @@ export const CLICK_SLOP = 4;
 export const RESIZE_UNDO_GAP_MS = 500;
 export const MAX_UNDO = 200;
 
-// The board itself, in board units. Everything lives inside it.
-export const BOARD_W = 10000;
-export const BOARD_H = 10000;
+// The board itself, in board units: 16:9 with rounded corners, its middle at
+// (5000, 5000) like the square board before it. Everything lives inside it.
+export const BOARD_W = 12800;
+export const BOARD_H = 7200;
+export const BOARD_X = 5000 - BOARD_W / 2;
+export const BOARD_Y = 5000 - BOARD_H / 2;
+export const BOARD_RADIUS = 160;
+// How far past the board's edge the screen can go, as a share of the screen,
+// so nobody gets lost in the empty space around it.
+export const BOARD_OVERSCROLL = 0.1;
 export const DOT_SPACING = 24;
 export const MIN_SCALE = 0.06;
 export const MAX_SCALE = 4;

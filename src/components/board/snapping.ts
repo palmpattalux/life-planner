@@ -7,8 +7,9 @@ import type { Key } from "./model";
 // a target only: a circle, square or text's centre snaps to it, across the
 // line ("x": a level line, so the text sits centred above or below it) or
 // along it ("y": an upright line). A line's free tip (`tip`) is a target
-// too: a circle, square or text's centre snaps in line with it either way,
-// so a text above an upright line can sit centred on it. A dragged line
+// too: a circle, square or text's middle or edges snap in line with it either
+// way, so a text above an upright line can sit centred on it, or level with
+// its tip. A dragged line
 // point also snaps in line with the centres of circles, squares and texts.
 export type SnapBox = {
   key: Key;
@@ -44,9 +45,19 @@ export function snapBoxes(moving: SnapBox[], dx: number, dy: number, all: SnapBo
             best = { delta, at: o[key] };
           continue;
         }
-        // A line's tip, or a line point lining up with a centre: centres only.
-        if (o.tip || (q.line && !o.line)) {
-          if (o.tip && q.line) continue;
+        // A line's tip: a circle, square or text's middle or edges line up
+        // with it, across (a guide level with the tip) and along.
+        if (o.tip) {
+          if (q.line) continue;
+          for (const m of mine) {
+            const delta = o[key] - m;
+            if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta)))
+              best = { delta, at: o[key] };
+          }
+          continue;
+        }
+        // A dragged line point lines up with a circle, square or text's centre.
+        if (q.line && !o.line) {
           const delta = o[key] - mine[1];
           if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta)))
             best = { delta, at: o[key] };

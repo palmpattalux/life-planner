@@ -185,3 +185,20 @@ export function bracketPath(points: Point[], side: 1 | -1, curl: number): string
     `Q${b.x},${b.y} ${at(b, turn(last), r)}`,
   ].join(" ");
 }
+
+// The point on a box's outline nearest to p, and how far p is from it
+// (whether p is inside or outside the box).
+export function nearestOnOutline(box: Box, p: Point): { p: Point; gap: number } {
+  const inside = p.x > box.minX && p.x < box.maxX && p.y > box.minY && p.y < box.maxY;
+  if (!inside) {
+    const q = { x: Math.min(box.maxX, Math.max(box.minX, p.x)), y: Math.min(box.maxY, Math.max(box.minY, p.y)) };
+    return { p: q, gap: Math.hypot(q.x - p.x, q.y - p.y) };
+  }
+  const sides = [
+    { gap: p.x - box.minX, p: { x: box.minX, y: p.y } },
+    { gap: box.maxX - p.x, p: { x: box.maxX, y: p.y } },
+    { gap: p.y - box.minY, p: { x: p.x, y: box.minY } },
+    { gap: box.maxY - p.y, p: { x: p.x, y: box.maxY } },
+  ];
+  return sides.sort((a, b) => a.gap - b.gap)[0];
+}

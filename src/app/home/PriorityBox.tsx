@@ -11,8 +11,8 @@ const box = "rounded-2xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.08)]";
 // Priority tasks: a list like Today's to-do, with a clock after each task.
 // Pressing the clock asks for the task's deadline; the time left shows on the
 // right of Home (see Deadlines). Tasks made with a board timeline's
-// "Deadline task" show up here with their deadline. Hovering a task shows a
-// trash icon that deletes it for good (and a deadline task's board text).
+// "Priority task" show up here with their deadline. Hovering a task shows a
+// trash icon that deletes it for good (and a priority task's board text).
 export function PriorityBox({ tasks, onChange }: { tasks: Task[] | null; onChange: (tasks: Task[]) => void }) {
   const supabase = useMemo(createClient, []);
   const [focus, setFocus] = useState(0);

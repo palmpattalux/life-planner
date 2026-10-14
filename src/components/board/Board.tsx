@@ -5,14 +5,20 @@ import {
   ATTACH_DISTANCE,
   BRACKET_CURL,
   BOARD_H,
+  BOARD_OVERSCROLL,
+  BOARD_RADIUS,
   BOARD_W,
+  BOARD_X,
+  BOARD_Y,
   CHECKED,
   CIRCLE_SIZE,
   CLICK_SLOP,
+  DEADLINE_MARK,
   DOT_SPACING,
   INK,
   LINE_WIDTH,
   LINE_WIDTHS,
+  OLD_LINE_WIDTHS,
   LINE_LABEL_SIZE,
   MAJOR_TICK,
   NOW_RED,
@@ -59,10 +65,22 @@ import {
   unit,
   type Box,
   type Point,
+  nearestOnOutline,
 } from "./geometry";
-import { CheckMark, ChecklistIcon, LayerButton, LineWidths, LinkButton, PinIcon, SquareIcon, TrashIcon } from "./icons";
+import {
+  CheckMark,
+  ChecklistIcon,
+  ClockIcon,
+  LayerButton,
+  LineWidths,
+  LinkButton,
+  PinIcon,
+  SquareIcon,
+  TrashIcon,
+} from "./icons";
 import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
+import { PriorityPicker } from "./PriorityPicker";
 import { LinkMenu, type AddTarget, type TaskPage } from "./LinkMenu";
 import { ToolIcon } from "./ToolIcon";
 import { keptGuides, snapBoxes, type SnapBox } from "./snapping";
@@ -88,10 +106,50 @@ import {
 import { BULLET, isPlain, mergeRuns, runLines, setListKind, sliceRuns, type ListKind, type Run } from "./richText";
 import { SIDE_MENU_W, SideMenu } from "./SideMenu";
 import { TextEditor } from "./TextEditor";
-import { dateAlong, subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
+import {
+  dateAlong,
+  subSteps,
+  tickValue,
+  timelineLabels,
+  timelineTicks,
+  type Timeline,
+  type TimeUnit,
+} from "./timeline";
 import { getShortcuts } from "@/lib/shortcuts";
 
 type View = { x: number; y: number; scale: number };
+
+// Every thickness a line can have, for its arrowheads, and how each is
+// written in an arrowhead's id ("1.5" as "1_5").
+const ARROW_WIDTHS = [...LINE_WIDTHS, ...OLD_LINE_WIDTHS];
+const markerWidthId = (w: number) => String(w).replace(".", "_");
+
+// The furthest out the board can be zoomed: the whole board fits on the
+// screen with a little room around it.
+function minScale() {
+  const fit = Math.min(window.innerWidth / BOARD_W, window.innerHeight / BOARD_H);
+  return Math.max(MIN_SCALE, fit / (1 + 2 * BOARD_OVERSCROLL));
+}
+
+// Keep a view within the zoom limits, and the screen on the board (it may go
+// a little past the edge). A board smaller than the screen sits in the middle.
+function clampView(v: View): View {
+  const scale = clamp(v.scale, minScale(), MAX_SCALE);
+  const k = scale / v.scale;
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  const fit = (pos: number, start: number, size: number, screen: number) => {
+    const room = screen * BOARD_OVERSCROLL;
+    const lo = screen - room - (start + size) * scale; // board's far edge not too far in
+    const hi = room - start * scale; // board's near edge not too far in
+    return lo > hi ? (lo + hi) / 2 : clamp(pos, lo, hi);
+  };
+  return {
+    scale,
+    x: fit(cx - (cx - v.x) * k, BOARD_X, BOARD_W, window.innerWidth),
+    y: fit(cy - (cy - v.y) * k, BOARD_Y, BOARD_H, window.innerHeight),
+  };
+}
 // The room (in board units) one smaller step of a stretched timeline needs
 // before it shows, and how many to skip when they don't all fit yet.
 const SUB_TICK_GAP = 34;
@@ -148,7 +206,7 @@ export type Planner = {
   taskPages: () => Promise<TaskPage[]>;
   // A linked text's first checkbox was ticked or unticked on the board.
   onCheck: (link: string, done: boolean) => void;
-  // A deadline task's text was deleted: delete its priority task too.
+  // A priority task's text was deleted: delete its priority task too.
   removePriority?: (link: string) => Promise<void>;
 };
 
@@ -198,15 +256,17 @@ export function Board({
   } | null>(null);
   // The pinned mark whose box (bold, colours) is showing.
   const [pinMenu, setPinMenu] = useState<{ lineId: number; value: string } | null>(null);
+  const pinMenuRef = useRef(pinMenu);
+  pinMenuRef.current = pinMenu;
   // This moment, for the "Now" arrow on timelines (kept up to the minute),
   // and the timeline whose arrow is showing the word "Now".
   const [now, setNow] = useState(() => new Date());
   const [nowShown, setNowShown] = useState<number | null>(null);
-  // The timeline whose "Deadline task" is asking for the deadline, what's
-  // typed so far, and why it couldn't be made.
+  // The timeline whose "Priority task" is picking a deadline, and why it
+  // couldn't be made. Clicking anything else cancels it.
   const [deadlineFor, setDeadlineFor] = useState<number | null>(null);
-  const [deadlineInput, setDeadlineInput] = useState("");
   const [deadlineError, setDeadlineError] = useState<string | null>(null);
+  useEffect(() => setDeadlineFor(null), [selection]);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
@@ -229,7 +289,10 @@ export function Board({
   const [draft, setDraft] = useState<{ from: Point; to: Point } | null>(null);
   // The selection box being dragged out, in screen coordinates.
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
+  const [view, setViewRaw] = useState<View>({ x: 0, y: 0, scale: 1 });
+  // Every view change stays within the zoom limits and near the board.
+  const setView = (next: View | ((v: View) => View)) =>
+    setViewRaw((v) => clampView(typeof next === "function" ? next(v) : next));
 
   // Event listeners set up once read the latest values through refs.
   const boardRef = useRef(board);
@@ -318,7 +381,11 @@ export function Board({
     return { x: (sx - v.x) / v.scale, y: (sy - v.y) / v.scale };
   }
 
-  function itemPos(id: number | undefined, data: BoardData = board): Point | undefined {
+  // Where an attached line end sits: the item's centre, or for a square the
+  // spot on its outline the end was attached at.
+  function itemPos(id: number | undefined, data: BoardData = board, rim?: Point): Point | undefined {
+    const q = rim && data.squares.find((q) => q.id === id);
+    if (q) return { x: q.x + rim.x * q.w, y: q.y + rim.y * q.h };
     const item =
       data.circles.find((c) => c.id === id) ??
       data.texts.find((t) => t.id === id) ??
@@ -326,9 +393,31 @@ export function Board({
     return item && { x: item.x, y: item.y };
   }
 
-  // The line with attached ends moved to their items' centres.
+  // The line with attached ends moved to where they sit on their items.
   function resolve(l: Line, data: BoardData = board): Line {
-    return { ...l, from: itemPos(l.fromItem, data) ?? l.from, to: itemPos(l.toItem, data) ?? l.to };
+    return {
+      ...l,
+      from: itemPos(l.fromItem, data, l.fromRim) ?? l.from,
+      to: itemPos(l.toItem, data, l.toRim) ?? l.to,
+    };
+  }
+
+  // The square whose outline is within reach of p (nearest first), and the
+  // spot on the outline, as stored in a line's fromRim / toRim.
+  function squareRimAt(p: Point, data: BoardData, reach: number) {
+    const hit = data.squares
+      .map((q) => ({
+        q,
+        near: nearestOnOutline(
+          { minX: q.x - q.w / 2, minY: q.y - q.h / 2, maxX: q.x + q.w / 2, maxY: q.y + q.h / 2 },
+          p,
+        ),
+      }))
+      .filter(({ near }) => near.gap <= reach)
+      .sort((a, b) => a.near.gap - b.near.gap)[0];
+    if (!hit) return undefined;
+    const { q, near } = hit;
+    return { id: q.id, at: near.p, rim: { x: (near.p.x - q.x) / q.w, y: (near.p.y - q.y) / q.h } };
   }
 
   const pointsOf = (l: Line): Point[] => [l.from, ...(l.bends ?? []), l.to];
@@ -343,8 +432,16 @@ export function Board({
       const i = end === "from" ? 0 : pts.length - 1;
       const neighbour = pts[end === "from" ? 1 : pts.length - 2];
       const d = unit(pts[i], neighbour);
+      // An end on a square's outline is already at its edge.
+      if (l[`${end}Rim`] && squares.some((q) => q.id === id)) return;
       const c = circles.find((c) => c.id === id);
-      const box = !c && texts.some((t) => t.id === id) ? boxOf(keyOf("text", id)) : null;
+      const box = c
+        ? null
+        : texts.some((t) => t.id === id)
+          ? boxOf(keyOf("text", id))
+          : squares.some((q) => q.id === id)
+            ? boxOf(keyOf("square", id))
+            : null;
       let by = 0;
       if (c) by = c.size / 2;
       else if (box) {
@@ -408,7 +505,8 @@ export function Board({
         const pts = pointsOf(resolve(l, data));
         const tips: SnapBox[] = [];
         if (l.fromItem === undefined) tips.push({ key: keyOf("line", l.id), ...pts[0], w: 0, h: 0, tip: true });
-        if (l.toItem === undefined) tips.push({ key: keyOf("line", l.id), ...pts[pts.length - 1], w: 0, h: 0, tip: true });
+        if (l.toItem === undefined)
+          tips.push({ key: keyOf("line", l.id), ...pts[pts.length - 1], w: 0, h: 0, tip: true });
         return tips;
       }),
       // Each line's middle, so a text above or below it snaps centred on it.
@@ -615,13 +713,17 @@ export function Board({
   }
 
   // Start with the middle of the board in the middle of the screen.
-  useEffect(() => {
+  useEffect(() => centreView(1), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Put the middle of the board in the middle of the screen ("f"), keeping
+  // the zoom unless one is given.
+  function centreView(scale = viewRef.current.scale) {
     setView({
-      x: window.innerWidth / 2 - BOARD_W / 2,
-      y: window.innerHeight / 2 - BOARD_H / 2,
-      scale: 1,
+      x: window.innerWidth / 2 - (BOARD_X + BOARD_W / 2) * scale,
+      y: window.innerHeight / 2 - (BOARD_Y + BOARD_H / 2) * scale,
+      scale,
     });
-  }, []);
+  }
 
   // Scroll wheel / trackpad. With something selected it resizes it (a group
   // grows or shrinks around its middle). Otherwise: two-finger swipe moves
@@ -659,7 +761,7 @@ export function Board({
       }
       const speed = e.ctrlKey ? 0.01 : 0.0015;
       setView((v) => {
-        const scale = clamp(v.scale * Math.exp(-e.deltaY * speed), MIN_SCALE, MAX_SCALE);
+        const scale = clamp(v.scale * Math.exp(-e.deltaY * speed), minScale(), MAX_SCALE);
         const k = scale / v.scale;
         return {
           scale,
@@ -887,16 +989,22 @@ export function Board({
     commit();
     // A line started or ended inside a circle or text is attached to it.
     const data = boardRef.current;
+    // Otherwise one started or ended near a square's outline sits on it.
+    const reach = ATTACH_DISTANCE / viewRef.current.scale;
     const a = itemAt(d.from, data);
     const b = itemAt(d.to, data);
+    const ra = a ? undefined : squareRimAt(d.from, data, reach);
+    const rb = b ? undefined : squareRimAt(d.to, data, reach);
     setLines((ls) => [
       ...ls,
       {
         id: nextId.current++,
-        from: a ? { x: a.x, y: a.y } : d.from,
-        to: b ? { x: b.x, y: b.y } : d.to,
-        fromItem: a?.id,
-        toItem: b?.id,
+        from: a ? { x: a.x, y: a.y } : (ra?.at ?? d.from),
+        to: b ? { x: b.x, y: b.y } : (rb?.at ?? d.to),
+        fromItem: a?.id ?? ra?.id,
+        toItem: b?.id ?? rb?.id,
+        ...(ra && { fromRim: ra.rim }),
+        ...(rb && { toRim: rb.rim }),
       },
     ]);
   }
@@ -920,6 +1028,10 @@ export function Board({
       if (typing(e)) return;
       const keys = getShortcuts();
       // View mode: only its own key (or Escape) does anything.
+      if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === keys.centre) {
+        centreView();
+        return;
+      }
       if (viewingRef.current) {
         if (
           !e.repeat &&
@@ -935,6 +1047,24 @@ export function Board({
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
+        return;
+      }
+      // Ctrl+B: bold on or off for the selected text, or the open pinned mark.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        const data = boardRef.current;
+        const sel = selectionRef.current;
+        const t =
+          sel.length === 1 && sel[0].startsWith("text:") && data.texts.find((x) => keyOf("text", x.id) === sel[0]);
+        const pm = pinMenuRef.current;
+        const l = pm && data.lines.find((x) => x.id === pm.lineId);
+        const pin = pm && l?.pins?.find((p) => p.value === pm.value);
+        if (t) {
+          e.preventDefault();
+          updateText(t.id, { bold: !t.bold });
+        } else if (l && pin) {
+          e.preventDefault();
+          updateLine(l.id, { pins: l.pins!.map((p) => (p === pin ? { ...p, bold: !p.bold } : p)) });
+        }
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
@@ -1044,7 +1174,7 @@ export function Board({
       moveMany(d.many, snap.dx, snap.dy, o);
       return;
     }
-    // A deadline task's text only slides straight across its timeline,
+    // A priority task's text only slides straight across its timeline,
     // staying level with its date.
     const dragged = d.kind === "text" ? o.texts.find((t) => t.id === d.id) : undefined;
     const spot = dragged?.deadline && deadlineSpot(dragged.deadline, o);
@@ -1145,12 +1275,15 @@ export function Board({
       ]
         .filter(({ gap }) => gap <= reach)
         .sort((a, b) => a.gap - b.gap)[0]?.c;
-      setSnapGuides(near ? [] : keptGuides(snapped.lines, snapped.at, pos));
+      // Not near a circle or text: near a square's outline, it sits on it.
+      const rim = near ? undefined : squareRimAt(pos, o, reach);
+      setSnapGuides(near || rim ? [] : keptGuides(snapped.lines, snapped.at, pos));
       const other: End = end === "from" ? "to" : "from";
       next = {
         ...line,
-        [end]: near ? { x: near.x, y: near.y } : pos,
-        [`${end}Item`]: near?.id,
+        [end]: near ? { x: near.x, y: near.y } : (rim?.at ?? pos),
+        [`${end}Item`]: near?.id ?? rim?.id,
+        [`${end}Rim`]: rim?.rim,
         // The other end keeps its attachment.
         [other]: o.lines.find((l) => l.id === d.id)![other],
       };
@@ -1339,7 +1472,7 @@ export function Board({
     } else {
       const from = g.mid;
       setView((v) => {
-        const scale = clamp(v.scale * k, MIN_SCALE, MAX_SCALE);
+        const scale = clamp(v.scale * k, minScale(), MAX_SCALE);
         const f = scale / v.scale;
         return { scale, x: mid.x - (from.x - v.x) * f, y: mid.y - (from.y - v.y) * f };
       });
@@ -1442,15 +1575,16 @@ export function Board({
     return { p, n, upright: Math.abs(dir.y) > Math.abs(dir.x) };
   }
 
-  // A timeline's "Deadline task": a bold text with a checkbox level with the
-  // deadline's date, ready to type. Once it has words it's on Home's
-  // Priority tasks too, with this deadline, ticked together with the text.
-  function addDeadlineText(l: Line, at: Date) {
+  // A timeline's "Priority task": a bold text with a checkbox and the task,
+  // level with the deadline's date. It's on Home's Priority tasks too, with
+  // this deadline, ticked together with the text.
+  function addDeadlineText(l: Line, at: Date, task: string) {
     const deadline = { line: l.id, at: at.toISOString() };
     const spot = deadlineSpot(deadline);
     if (!spot) return false;
     const gap = spot.upright ? 72 : 36;
     const id = nextId.current++;
+    const link = crypto.randomUUID();
     commit();
     setTexts((ts) => [
       ...ts,
@@ -1458,33 +1592,45 @@ export function Board({
         id,
         x: spot.p.x + spot.n.x * gap,
         y: spot.p.y + spot.n.y * gap,
-        text: `${UNCHECKED} `,
+        text: `${UNCHECKED} ${task}`,
         fontSize: TEXT_SIZE,
         color: TEXT_COLORS[0],
         bold: true,
-        link: crypto.randomUUID(),
+        link,
         deadline,
       },
     ]);
-    setSelection([]);
-    editingIsNew.current = true;
-    editingAppend.current = "";
-    setEditing(id);
+    void planner?.add({ kind: "priority", deadline: deadline.at }, { text: task, link, done: false }).catch(() => {});
     return true;
+  }
+
+  // The years a priority task's deadline can be picked from: a year
+  // timeline's own years, otherwise this year and the next eleven.
+  function pickerYears(t: Timeline) {
+    const a = Number(t.start);
+    const b = Number(t.end);
+    if (t.unit === "year" && b >= a && b - a < 120) return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+    const now = new Date().getFullYear();
+    return Array.from({ length: 12 }, (_, i) => now + i);
   }
 
   // The circle menu's square icon: swap the circle for a square outline in the
   // same place (same id, so attached lines stay attached), still selected.
+  // It goes to the back, behind everything else.
   function circleToSquare(c: Circle) {
     commit();
-    setBoard((b) => ({
-      ...b,
-      circles: b.circles.filter((x) => x.id !== c.id),
-      squares: [
-        ...b.squares,
-        { id: c.id, x: c.x, y: c.y, w: c.size, h: c.size, color: TEXT_COLORS[0], group: c.group },
-      ],
-    }));
+    setBoard((b) => {
+      const zs = [...b.circles, ...b.squares, ...b.pictures, ...b.texts].map((x) => x.z ?? 0);
+      const z = Math.min(0, ...zs) - 1;
+      return {
+        ...b,
+        circles: b.circles.filter((x) => x.id !== c.id),
+        squares: [
+          ...b.squares,
+          { id: c.id, x: c.x, y: c.y, w: c.size, h: c.size, color: TEXT_COLORS[0], group: c.group, z },
+        ],
+      };
+    });
     setSelection([keyOf("square", c.id)]);
   }
 
@@ -1571,7 +1717,7 @@ export function Board({
     if (!editingIsNew.current && changed) commit();
     if (text) {
       setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, text, runs } : t)));
-      // A deadline task's words go to Home's Priority tasks too.
+      // A priority task's words go to Home's Priority tasks too.
       const words = taskText(text);
       if (current?.deadline && current.link && words && changed) {
         const done = text.split("\n")[firstBoxLine(text)]?.trimStart()[0] === CHECKED;
@@ -2003,9 +2149,12 @@ export function Board({
     selection.every((k) => groupOf(k) === groupOf(selection[0])) &&
     withGroups(selection, board).length === selection.length;
   const arrowheadFor = (l: Line) =>
-    `url(#arrowhead-${Math.max(0, TEXT_COLORS.indexOf(l.color ?? INK))}-${LINE_WIDTHS.includes(l.width ?? LINE_WIDTH) ? (l.width ?? LINE_WIDTH) : LINE_WIDTH})`;
+    `url(#arrowhead-${Math.max(0, TEXT_COLORS.indexOf(l.color ?? INK))}-${markerWidthId(ARROW_WIDTHS.includes(l.width ?? LINE_WIDTH) ? (l.width ?? LINE_WIDTH) : LINE_WIDTH)})`;
   const toPolyline = (pts: Point[]) => pts.map((p) => `${p.x},${p.y}`).join(" ");
   const px = (n: number) => n / view.scale; // a size in screen pixels, in board units
+  // Pop-up menus stay the same size on screen at any zoom, whatever the size
+  // of the thing they belong to.
+  const onScreen = { transform: `scale(${1 / view.scale})` };
 
   return (
     <div
@@ -2033,10 +2182,15 @@ export function Board({
       >
         <div
           data-board
-          className="absolute left-0 top-0"
+          className="absolute"
           style={{
+            left: BOARD_X,
+            top: BOARD_Y,
             width: BOARD_W,
             height: BOARD_H,
+            borderRadius: BOARD_RADIUS,
+            // Dots in the same places as before the board was moved.
+            backgroundPosition: `${-BOARD_X}px ${-BOARD_Y}px`,
             // Keep the edge line about 1 screen pixel at any zoom.
             boxShadow: `0 0 0 ${px(1)}px rgb(var(--dot) / 0.12)`,
             backgroundImage: `radial-gradient(circle, rgb(var(--dot) / ${dotAlpha}) 1px, transparent 1.2px)`,
@@ -2044,18 +2198,38 @@ export function Board({
           }}
         />
 
+        {/* The inside of each square, to grab and move it by. Underneath the
+            lines (and everything else), so whatever is on a square can still
+            be clicked. */}
+        <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={BOARD_W} height={BOARD_H}>
+          {squares.map((q) => (
+            <rect
+              key={q.id}
+              data-square-inside={q.id}
+              x={q.x - q.w / 2}
+              y={q.y - q.h / 2}
+              width={q.w}
+              height={q.h}
+              fill="transparent"
+              className="cursor-grab active:cursor-grabbing"
+              style={{ pointerEvents: "fill" }}
+              onPointerDown={(e) => startDrag(e, "square", q.id)}
+            />
+          ))}
+        </svg>
+
         <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={BOARD_W} height={BOARD_H}>
           <defs>
             {/* One arrowhead per line colour and thickness (thicker lines get
                 bigger arrowheads, but not as much bigger as the line). */}
             {TEXT_COLORS.flatMap((color, i) =>
-              LINE_WIDTHS.map((w) => {
+              ARROW_WIDTHS.map((w) => {
                 // Rounded, so the server and the browser write the same number.
                 const size = Math.round(((10 * (w / LINE_WIDTH) ** 0.75) / w) * 100) / 100;
                 return (
                   <marker
                     key={`${color}-${w}`}
-                    id={`arrowhead-${i}-${w}`}
+                    id={`arrowhead-${i}-${markerWidthId(w)}`}
                     viewBox="0 0 10 10"
                     refX="8"
                     refY="5"
@@ -2117,7 +2291,7 @@ export function Board({
                     points={toPolyline(pts)}
                     fill="none"
                     stroke="transparent"
-                    strokeWidth={Math.max(px(14), (l.width ?? LINE_WIDTH) + px(8))}
+                    strokeWidth={Math.max(px(24), (l.width ?? LINE_WIDTH) + px(16))}
                     className="cursor-grab active:cursor-grabbing"
                     style={{ pointerEvents: "stroke" }}
                     onPointerDown={(e) => {
@@ -2129,6 +2303,25 @@ export function Board({
                 </g>
               );
             })}
+          {/* Each priority task's date: a line cutting across its timeline. */}
+          {texts.map((t) => {
+            const spot = t.deadline && deadlineSpot(t.deadline);
+            if (!spot) return null;
+            const { p, n } = spot;
+            return (
+              <line
+                key={`deadline-${t.id}`}
+                data-deadline-mark={t.id}
+                x1={p.x - n.x * DEADLINE_MARK}
+                y1={p.y - n.y * DEADLINE_MARK}
+                x2={p.x + n.x * DEADLINE_MARK}
+                y2={p.y + n.y * DEADLINE_MARK}
+                stroke={t.color ?? INK}
+                strokeWidth={LINE_WIDTH * 1.5}
+                strokeLinecap="round"
+              />
+            );
+          })}
           {phase &&
             (() => {
               const l = lines.find((x) => x.id === phase.lineId);
@@ -2161,7 +2354,7 @@ export function Board({
               x2={draft.to.x}
               y2={draft.to.y}
               stroke={INK}
-              strokeWidth={2}
+              strokeWidth={LINE_WIDTH}
               strokeLinecap="round"
             />
           )}
@@ -2172,8 +2365,9 @@ export function Board({
             key={c.id}
             data-circle={c.id}
             onPointerDown={(e) => startDrag(e, "circle", c.id)}
-            className="absolute cursor-grab rounded-full border-2 border-stone-900 bg-white active:cursor-grabbing"
+            className="absolute cursor-grab rounded-full border-stone-900 bg-white active:cursor-grabbing"
             style={{
+              borderWidth: LINE_WIDTH,
               zIndex: layerOf.get(keyOf("circle", c.id)),
               width: c.size,
               height: c.size,
@@ -2213,8 +2407,17 @@ export function Board({
                     strokeWidth={px(6)}
                   />
                 )}
-                <rect x={1} y={1} width={q.w - 2} height={q.h - 2} fill="none" stroke={q.color} strokeWidth={2} />
-                {/* Only the outline can be grabbed, not the space inside. */}
+                <rect
+                  x={LINE_WIDTH / 2}
+                  y={LINE_WIDTH / 2}
+                  width={q.w - LINE_WIDTH}
+                  height={q.h - LINE_WIDTH}
+                  fill="none"
+                  stroke={q.color}
+                  strokeWidth={LINE_WIDTH}
+                />
+                {/* The outline, easy to grab (the inside is grabbed from a
+                    layer underneath the lines). */}
                 <rect
                   data-square={q.id}
                   width={q.w}
@@ -2443,8 +2646,8 @@ export function Board({
                   <div
                     data-menu="text"
                     onPointerDown={(e) => e.stopPropagation()}
-                    className="absolute left-full top-0 flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
-                    style={{ marginLeft: 8, zIndex: TOP_LAYER }}
+                    className="absolute left-full top-0 flex origin-top-left flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
+                    style={{ ...onScreen, marginLeft: px(8), zIndex: TOP_LAYER }}
                   >
                     <div className="flex gap-1.5">
                       {TEXT_COLORS.map((color) => (
@@ -2503,12 +2706,12 @@ export function Board({
                       ))}
                     </div>
                     {layerButton(keyOf("text", t.id))}
-                    {/* A deadline task: delete it for good, here and on Home. */}
+                    {/* A priority task: delete it for good, here and on Home. */}
                     {t.deadline && (
                       <button
                         data-delete-deadline
                         onClick={() => {
-                          if (!window.confirm("Delete this deadline task for good? It's removed from Home too."))
+                          if (!window.confirm("Delete this priority task for good? It's removed from Home too."))
                             return;
                           setSelection([]);
                           removeKeys([keyOf("text", t.id)]);
@@ -2541,8 +2744,8 @@ export function Board({
               <div
                 data-menu="picture"
                 onPointerDown={(e) => e.stopPropagation()}
-                className="absolute min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-                style={{ left: p.x + p.w / 2 + 8, top: p.y - p.h / 2, zIndex: TOP_LAYER }}
+                className="absolute min-w-40 origin-top-left rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+                style={{ ...onScreen, left: p.x + p.w / 2 + px(8), top: p.y - p.h / 2, zIndex: TOP_LAYER }}
               >
                 {layer}
               </div>
@@ -2559,10 +2762,10 @@ export function Board({
               <>
                 {/* The menu goes underneath the handles so it never hides an end. */}
                 <div
-                  className="absolute"
+                  className="absolute origin-top-left"
                   style={(() => {
                     const mid = pointAlong(pts, polylineLength(pts) / 2).p;
-                    return { left: mid.x + 12, top: mid.y + 12, zIndex: TOP_LAYER };
+                    return { ...onScreen, left: mid.x + px(12), top: mid.y + px(12), zIndex: TOP_LAYER };
                   })()}
                 >
                   <LineMenu
@@ -2590,36 +2793,46 @@ export function Board({
                   style={{ zIndex: TOP_LAYER }}
                 >
                   {(l.bends ?? []).map((p, i) => (
-                    <rect
+                    // A bigger see-through circle around the handle, so it's
+                    // easy to grab.
+                    <g
                       key={`bend-${i}`}
-                      data-line-bend={i}
-                      x={p.x - px(5)}
-                      y={p.y - px(5)}
-                      width={px(10)}
-                      height={px(10)}
-                      transform={`rotate(45 ${p.x} ${p.y})`}
-                      data-selected={selectedBend?.lineId === l.id && selectedBend.index === i ? "yes" : undefined}
-                      fill={selectedBend?.lineId === l.id && selectedBend.index === i ? SELECT_BLUE : "white"}
-                      stroke={INK}
-                      strokeWidth={px(1.5)}
                       className="pointer-events-auto cursor-move"
                       onPointerDown={(e) => startDrag(e, "bend", l.id, i)}
-                    />
+                    >
+                      <circle cx={p.x} cy={p.y} r={px(12)} fill="transparent" />
+                      <rect
+                        data-line-bend={i}
+                        x={p.x - px(5)}
+                        y={p.y - px(5)}
+                        width={px(10)}
+                        height={px(10)}
+                        transform={`rotate(45 ${p.x} ${p.y})`}
+                        data-selected={selectedBend?.lineId === l.id && selectedBend.index === i ? "yes" : undefined}
+                        fill={selectedBend?.lineId === l.id && selectedBend.index === i ? SELECT_BLUE : "white"}
+                        stroke={INK}
+                        strokeWidth={px(1.5)}
+                      />
+                    </g>
                   ))}
                   {(["from", "to"] as const).map((end) => (
-                    <circle
+                    <g
                       key={end}
-                      data-line-end={end}
-                      data-attached={l[`${end}Item`] !== undefined ? "yes" : "no"}
-                      cx={l[end].x}
-                      cy={l[end].y}
-                      r={px(6)}
-                      fill="white"
-                      stroke={INK}
-                      strokeWidth={px(1.5)}
                       className="pointer-events-auto cursor-move"
                       onPointerDown={(e) => startDrag(e, end, l.id)}
-                    />
+                    >
+                      <circle cx={l[end].x} cy={l[end].y} r={px(13)} fill="transparent" />
+                      <circle
+                        data-line-end={end}
+                        data-attached={l[`${end}Item`] !== undefined ? "yes" : "no"}
+                        cx={l[end].x}
+                        cy={l[end].y}
+                        r={px(6)}
+                        fill="white"
+                        stroke={INK}
+                        strokeWidth={px(1.5)}
+                      />
+                    </g>
                   ))}
                 </svg>
 
@@ -2687,90 +2900,78 @@ export function Board({
             const toSide = Math.abs(n.x) > Math.abs(n.y);
             return (
               <div
-                data-menu="phase"
-                onPointerDown={(e) => e.stopPropagation()}
-                className={`absolute flex flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg ${toSide ? "-translate-x-full -translate-y-1/2" : "-translate-x-1/2 -translate-y-full"}`}
-                style={{ left: at.x + n.x * px(14), top: at.y + n.y * px(14), zIndex: TOP_LAYER }}
+                className="absolute origin-top-left"
+                style={{ ...onScreen, left: at.x + n.x * px(14), top: at.y + n.y * px(14), zIndex: TOP_LAYER }}
               >
-                {!ends && (
-                  <button
-                    onClick={() => {
-                      setSelection([]);
-                      setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
-                    }}
-                    className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
-                  >
-                    Phase
-                  </button>
-                )}
-                {!ends && planner && (
-                  <button
-                    data-deadline-task
-                    onClick={() => {
-                      setDeadlineFor(deadlineFor === selectedLine.id ? null : selectedLine.id);
-                      setDeadlineError(null);
-                    }}
-                    className={`w-full rounded px-2 py-1 text-left text-sm ${deadlineFor === selectedLine.id ? "bg-stone-100" : "hover:bg-stone-100"}`}
-                  >
-                    Deadline task
-                  </button>
-                )}
-                {deadlineFor === selectedLine.id && (
-                  <form
-                    data-deadline-form
-                    className="space-y-1 px-2 py-1"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const at = new Date(deadlineInput);
-                      if (!deadlineInput || isNaN(at.getTime())) return setDeadlineError("Pick a date and time.");
-                      if (!addDeadlineText(selectedLine, at))
-                        return setDeadlineError("That date isn't on this timeline.");
-                      setDeadlineFor(null);
-                      setDeadlineInput("");
-                    }}
-                  >
-                    <label className="block text-xs text-stone-500">
-                      Deadline
-                      <input
-                        type="datetime-local"
-                        autoFocus
-                        value={deadlineInput}
-                        onChange={(e) => {
-                          setDeadlineInput(e.target.value);
-                          setDeadlineError(null);
-                        }}
-                        className="mt-0.5 block rounded border border-stone-300 px-2 py-1 text-sm text-stone-900"
-                      />
-                    </label>
-                    {deadlineError && <p className="text-xs text-red-600">{deadlineError}</p>}
-                    <button className="w-full rounded bg-stone-900 px-2 py-1 text-sm font-medium text-white">
-                      Make task
-                    </button>
-                  </form>
-                )}
-                <div className="flex gap-1.5 px-2 py-1.5">
-                  {TEXT_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      aria-label={`Colour ${color}`}
-                      onClick={() => updateLine(selectedLine.id, { color })}
-                      className={`size-5 rounded-full ${(selectedLine.color ?? INK) === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
-                      style={{ background: color }}
+                <div
+                  data-menu="phase"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className={`absolute flex w-max flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg ${toSide ? "-translate-x-full -translate-y-1/2" : "-translate-x-1/2 -translate-y-full"}`}
+                >
+                  {deadlineFor === selectedLine.id ? (
+                    <PriorityPicker
+                      years={pickerYears(selectedLine.time!)}
+                      error={deadlineError}
+                      onBack={() => setDeadlineFor(null)}
+                      onDone={(at, task) => {
+                        if (!addDeadlineText(selectedLine, at, task))
+                          return setDeadlineError("That date isn't on this timeline.");
+                        setDeadlineFor(null);
+                        setSelection([]);
+                      }}
                     />
-                  ))}
+                  ) : (
+                    <>
+                      {!ends && (
+                        <button
+                          onClick={() => {
+                            setSelection([]);
+                            setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
+                          }}
+                          className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+                        >
+                          Phase
+                        </button>
+                      )}
+                      {!ends && planner && (
+                        <button
+                          data-priority-task-button
+                          onClick={() => {
+                            setDeadlineFor(selectedLine.id);
+                            setDeadlineError(null);
+                          }}
+                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+                        >
+                          <ClockIcon />
+                          Priority task
+                        </button>
+                      )}
+                      <div className="flex gap-1.5 px-2 py-1.5">
+                        {TEXT_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            aria-label={`Colour ${color}`}
+                            onClick={() => updateLine(selectedLine.id, { color })}
+                            className={`size-5 rounded-full ${(selectedLine.color ?? INK) === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                            style={{ background: color }}
+                          />
+                        ))}
+                      </div>
+                      {!ends && (
+                        <button
+                          onClick={() => {
+                            setSelection([]);
+                            setPhase({ lineId: selectedLine.id, start: null, hover: 0, pin: true });
+                          }}
+                          aria-label="Pin"
+                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100"
+                        >
+                          <PinIcon />
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
-                {!ends && (
-                  <button
-                    onClick={() => {
-                      setSelection([]);
-                      setPhase({ lineId: selectedLine.id, start: null, hover: 0, pin: true });
-                    }}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100"
-                  >
-                    <PinIcon />
-                    Pin
-                  </button>
-                )}
               </div>
             );
           })()}
@@ -2786,33 +2987,38 @@ export function Board({
             const at = pointAlong(pts, i * spacing).p;
             return (
               <div
-                data-menu="pin"
-                onPointerDown={(e) => e.stopPropagation()}
-                className="absolute flex -translate-x-1/2 items-center gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
+                className="absolute origin-top-left"
                 style={{
+                  ...onScreen,
                   left: at.x,
                   top: at.y + MAJOR_TICK * PIN_GROW + TICK_LABEL_SIZE * PIN_GROW * 2 + px(8),
                   zIndex: TOP_LAYER,
                 }}
               >
-                <button
-                  aria-label="Bold"
-                  aria-pressed={pin.bold}
-                  onClick={() => updatePin(l.id, pin.value, { bold: !pin.bold })}
-                  className={`size-6 rounded text-sm font-bold ${pin.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                <div
+                  data-menu="pin"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="absolute flex w-max -translate-x-1/2 items-center gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
                 >
-                  B
-                </button>
-                <div className="flex gap-1.5">
-                  {TEXT_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      aria-label={`Colour ${color}`}
-                      onClick={() => updatePin(l.id, pin.value, { color })}
-                      className={`size-5 rounded-full ${pin.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
-                      style={{ background: color }}
-                    />
-                  ))}
+                  <button
+                    aria-label="Bold"
+                    aria-pressed={pin.bold}
+                    onClick={() => updatePin(l.id, pin.value, { bold: !pin.bold })}
+                    className={`size-6 rounded text-sm font-bold ${pin.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                  >
+                    B
+                  </button>
+                  <div className="flex gap-1.5">
+                    {TEXT_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        aria-label={`Colour ${color}`}
+                        onClick={() => updatePin(l.id, pin.value, { color })}
+                        className={`size-5 rounded-full ${pin.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                        style={{ background: color }}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
             );
@@ -2822,9 +3028,10 @@ export function Board({
           <div
             data-menu="circle"
             onPointerDown={(e) => e.stopPropagation()}
-            className="absolute min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+            className="absolute min-w-40 origin-top-left rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
             style={{
-              left: menuCircle.x + menuCircle.size / 2 + 8,
+              ...onScreen,
+              left: menuCircle.x + menuCircle.size / 2 + px(8),
               top: menuCircle.y - menuCircle.size / 2,
               zIndex: TOP_LAYER,
             }}
@@ -2836,11 +3043,11 @@ export function Board({
               Text
             </button>
             <button
+              aria-label="Square"
               onClick={() => circleToSquare(menuCircle)}
               className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
             >
               <SquareIcon />
-              Square
             </button>
             {layerButton(keyOf("circle", menuCircle.id))}
             <LinkButton />
@@ -2874,9 +3081,10 @@ export function Board({
           <div
             data-menu="square"
             onPointerDown={(e) => e.stopPropagation()}
-            className="absolute flex min-w-40 flex-col gap-1 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
+            className="absolute flex min-w-40 origin-top-left flex-col gap-1 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
             style={{
-              left: menuSquare.x + menuSquare.w / 2 + 8 + px(8),
+              ...onScreen,
+              left: menuSquare.x + menuSquare.w / 2 + px(16),
               top: menuSquare.y - menuSquare.h / 2,
               zIndex: TOP_LAYER,
             }}

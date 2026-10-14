@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { INK, TEXT_COLORS } from "./constants";
-import { LineWidths, LinkButton } from "./icons";
+import { AngleIcon, LineWidths, LinkButton } from "./icons";
 import { LIMITS, MONTHS, timelineTicks, type Timeline, type TimeUnit } from "./timeline";
 
 const UNITS: { unit: TimeUnit; label: string }[] = [
@@ -77,11 +77,7 @@ export function LineMenu({
             Time
           </button>
           <button className={`${item} flex items-center gap-2`} onClick={onAngle} aria-label="Angle">
-            {/* Angle icon: two strokes meeting at a corner. */}
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
-              <path d="M2 14 L8 3 L14 14" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Angle
+            <AngleIcon />
           </button>
           <button className={item} onClick={onText}>
             Text
