@@ -6,8 +6,20 @@ import type { Key } from "./model";
 // and only to other lines' points (`line: true`). A line's middle (`mid`) is
 // a target only: a circle, square or text's centre snaps to it, across the
 // line ("x": a level line, so the text sits centred above or below it) or
-// along it ("y": an upright line).
-export type SnapBox = { key: Key; x: number; y: number; w: number; h: number; line?: boolean; mid?: "x" | "y" };
+// along it ("y": an upright line). A line's free tip (`tip`) is a target
+// too: a circle, square or text's centre snaps in line with it either way,
+// so a text above an upright line can sit centred on it. A dragged line
+// point also snaps in line with the centres of circles, squares and texts.
+export type SnapBox = {
+  key: Key;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  line?: boolean;
+  mid?: "x" | "y";
+  tip?: boolean;
+};
 export type Guide = { a: Point; b: Point };
 
 // How far to nudge things being dragged (by dx, dy) so an edge or middle of
@@ -21,12 +33,20 @@ export function snapBoxes(moving: SnapBox[], dx: number, dy: number, all: SnapBo
   const axis = (key: "x" | "y", size: "w" | "h", shift: number) => {
     let best: { delta: number; at: number } | null = null;
     for (const q of moving) {
-      if (q.mid) continue;
+      if (q.mid || q.tip) continue;
       const mine = lineOf({ ...q, [key]: q[key] + shift }, key, size);
       for (const o of others) {
         // A line's middle: only centres snap to it, and only across the line.
         if (o.mid) {
           if (q.line || o.mid !== key) continue;
+          const delta = o[key] - mine[1];
+          if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta)))
+            best = { delta, at: o[key] };
+          continue;
+        }
+        // A line's tip, or a line point lining up with a centre: centres only.
+        if (o.tip || (q.line && !o.line)) {
+          if (o.tip && q.line) continue;
           const delta = o[key] - mine[1];
           if (Math.abs(delta) <= reach && (!best || Math.abs(delta) < Math.abs(best.delta)))
             best = { delta, at: o[key] };

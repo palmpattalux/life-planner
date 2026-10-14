@@ -402,6 +402,15 @@ export function Board({
       ...data.lines.flatMap((l) =>
         lineSnapPoints(l, data).map((p) => ({ key: keyOf("line", l.id), ...p, w: 0, h: 0, line: true })),
       ),
+      // Each line's free tips (not on a circle or text), so a text or shape
+      // lines up centred with one.
+      ...data.lines.flatMap((l) => {
+        const pts = pointsOf(resolve(l, data));
+        const tips: SnapBox[] = [];
+        if (l.fromItem === undefined) tips.push({ key: keyOf("line", l.id), ...pts[0], w: 0, h: 0, tip: true });
+        if (l.toItem === undefined) tips.push({ key: keyOf("line", l.id), ...pts[pts.length - 1], w: 0, h: 0, tip: true });
+        return tips;
+      }),
       // Each line's middle, so a text above or below it snaps centred on it.
       ...data.lines.map((l) => {
         const pts = pointsOf(resolve(l, data));
