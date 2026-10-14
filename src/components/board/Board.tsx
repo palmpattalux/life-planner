@@ -87,6 +87,7 @@ import { BULLET, isPlain, mergeRuns, runLines, setListKind, sliceRuns, type List
 import { SIDE_MENU_W, SideMenu } from "./SideMenu";
 import { TextEditor } from "./TextEditor";
 import { dateAlong, subSteps, tickValue, timelineLabels, timelineTicks, type TimeUnit } from "./timeline";
+import { getShortcuts } from "@/lib/shortcuts";
 
 type View = { x: number; y: number; scale: number };
 // The room (in board units) one smaller step of a stretched timeline needs
@@ -120,7 +121,9 @@ type DragKind = Kind | End | "bend" | "corner" | "selection";
 //   Drop an end near a circle or text and it attaches, following it when it moves.
 // - Backspace deletes whatever is selected; Ctrl+Z / Cmd+Z undoes any change,
 //   Ctrl+Shift+Z / Cmd+Shift+Z redoes it.
-// - "v" opens the menu on the right, which holds the saved presets.
+// - "m" opens the menu on the right, which holds the saved presets.
+// - "v" turns view mode on and off: nothing can be changed, and hovering a
+//   text makes it bigger to read. (These keys can be changed in Home's menu.)
 // The board starts from `initial` and reports every change to `onChange`, so
 // the page around it can save it. Presets are kept by the page too.
 // README.md lists every control in full.
@@ -272,8 +275,12 @@ export function Board({
   const clipboard = useRef<BoardData | null>(null);
   const pasteFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [presetSaved, setPresetSaved] = useState(false);
-  // The right-hand menu opened with "v".
+  // The right-hand menu opened with "m".
   const [menuOpen, setMenuOpen] = useState(false);
+  // View mode: looking only, nothing can be changed (see toggleView).
+  const [viewing, setViewing] = useState(false);
+  const viewingRef = useRef(viewing);
+  viewingRef.current = viewing;
   // Phones and tablets: a toolbar stands in for the keys.
   const [isTouch, setIsTouch] = useState(false);
   useEffect(() => setIsTouch(window.matchMedia("(pointer: coarse)").matches), []);
@@ -898,6 +905,19 @@ export function Board({
 
     function onKeyDown(e: KeyboardEvent) {
       if (typing(e)) return;
+      const keys = getShortcuts();
+      // View mode: only its own key (or Escape) does anything.
+      if (viewingRef.current) {
+        if (
+          !e.repeat &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          (e.key.toLowerCase() === keys.view || e.key === "Escape")
+        )
+          toggleView();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -935,21 +955,23 @@ export function Board({
       }
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
-      if (key === "v") {
+      if (key === keys.presets) {
         setMenuOpen((open) => !open);
-      } else if (key === "t") {
+      } else if (key === keys.view) {
+        toggleView();
+      } else if (key === keys.text) {
         e.preventDefault();
         addText(cursorOnBoard());
-      } else if (key === "b") {
+      } else if (key === keys.circle) {
         addCircle(cursorOnBoard());
-      } else if (key === "n" && !draftRef.current) {
+      } else if (key === keys.line && !draftRef.current) {
         const at = cursorOnBoard();
         setDraft({ from: at, to: at });
       }
     }
 
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key.toLowerCase() === "n") finishDraft();
+      if (e.key.toLowerCase() === getShortcuts().line) finishDraft();
     }
 
     // Pasting: a picture copied from outside the site goes on the board at
@@ -957,6 +979,7 @@ export function Board({
     function onPaste(e: ClipboardEvent) {
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || ["INPUT", "TEXTAREA"].includes(el.tagName))) return;
+      if (viewingRef.current) return;
       if (pasteFallback.current) clearTimeout(pasteFallback.current);
       pasteFallback.current = null;
       const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
@@ -1152,6 +1175,30 @@ export function Board({
     });
   }
 
+  // View mode on or off. Turning it on lets go of whatever was selected or
+  // open, so nothing can be changed until it's off again.
+  function toggleView() {
+    if (!viewingRef.current) {
+      setSelection([]);
+      setMenuOpen(false);
+      setPinMenu(null);
+      setPhase(null);
+      setSelectedBend(null);
+      setDraft(null);
+      setLineMode(false);
+    }
+    viewingRef.current = !viewingRef.current;
+    setViewing(viewingRef.current);
+  }
+
+  // In view mode, presses and clicks on the board do nothing (two fingers
+  // still move around and zoom), except on the view mode switch itself.
+  function blockedInView(e: React.SyntheticEvent) {
+    if (!viewingRef.current || (e.target as HTMLElement).closest?.("[data-view-switch]")) return false;
+    e.stopPropagation();
+    return true;
+  }
+
   function startDrag(e: React.PointerEvent, kind: DragKind, id: number, index?: number) {
     e.stopPropagation();
     setPinMenu(null);
@@ -1179,6 +1226,8 @@ export function Board({
   // Pressing on empty board starts a selection box (or, inside the box
   // around several selected things, drags them).
   function onBoardPointerDown(e: React.PointerEvent) {
+    // View mode: nothing to select (and the view mode switch stays clickable).
+    if (viewingRef.current) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     setPinMenu(null);
     // Inside the box around several selected things: drag them all.
@@ -1230,8 +1279,12 @@ export function Board({
   // something selected, a pinch resizes it instead (a group only when the
   // pinch is inside its box). The toolbar's Line makes the next drag draw a line.
   function onTouchDown(e: React.PointerEvent) {
-    if (e.pointerType !== "touch") return;
+    if (e.pointerType !== "touch") {
+      blockedInView(e);
+      return;
+    }
     touchPoints.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touchPoints.current.size < 2 && blockedInView(e)) return;
     if (touchPoints.current.size >= 2) {
       e.stopPropagation();
       if (touchPoints.current.size > 2) return;
@@ -1244,7 +1297,8 @@ export function Board({
       const pad = 6 / viewRef.current.scale;
       const insideBox =
         !!box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad;
-      const resize = (sel.length === 1 && !sel[0].startsWith("line:")) || (sel.length > 1 && insideBox);
+      const resize =
+        !viewingRef.current && ((sel.length === 1 && !sel[0].startsWith("line:")) || (sel.length > 1 && insideBox));
       gesture.current = { mid, dist, resize, committed: false };
       return;
     }
@@ -1943,7 +1997,10 @@ export function Board({
     <div
       ref={rootRef}
       // overflow-clip (not hidden): focusing a field in a menu must not scroll the board.
+      data-viewing={viewing || undefined}
       className="fixed inset-0 touch-none select-none overflow-clip bg-white"
+      onClickCapture={blockedInView}
+      onDoubleClickCapture={blockedInView}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => {
@@ -2862,7 +2919,7 @@ export function Board({
         )}
       </div>
 
-      {(selection.length > 1 || (editingPreset && selection.length > 0)) && (
+      {!viewing && (selection.length > 1 || (editingPreset && selection.length > 0)) && (
         <button
           data-preset-button
           onPointerDown={(e) => e.stopPropagation()}
@@ -2874,7 +2931,24 @@ export function Board({
         </button>
       )}
 
-      {isTouch && (
+      {/* View mode: a switch at the top shows it's on; pressing it turns it off. */}
+      {viewing && (
+        <button
+          data-view-switch
+          role="switch"
+          aria-checked
+          onClick={toggleView}
+          className="animate-pop fixed left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white py-1.5 pl-4 pr-1.5 text-sm font-medium shadow-[0_2px_10px_rgba(0,0,0,0.15)]"
+          style={{ zIndex: TOP_LAYER }}
+        >
+          View mode
+          <span className="relative h-5 w-9 rounded-full bg-stone-900">
+            <span className="absolute left-[18px] top-0.5 size-4 rounded-full bg-white" />
+          </span>
+        </button>
+      )}
+
+      {isTouch && !viewing && (
         <div
           data-toolbar
           onPointerDown={(e) => e.stopPropagation()}

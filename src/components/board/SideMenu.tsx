@@ -5,7 +5,7 @@ import type { Preset } from "./model";
 
 export const SIDE_MENU_W = 256;
 
-// The menu on the right of the board, opened and closed with "v".
+// The menu on the right of the board, opened and closed with "m" (or the key chosen in Home's menu).
 // "Preset" drops down every saved preset, each with Use, Edit and Delete.
 export function SideMenu({
   presets,

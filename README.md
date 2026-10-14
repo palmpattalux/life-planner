@@ -26,7 +26,9 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 - With several things selected, click **Group** beside the selection box. Grouped things are selected and moved together; click **Ungroup** to split them again. Under that button is a row of colours: picking one gives every selected square, text and line that colour.
 - Clicking a plain line (not a timeline) shows colours in its menu.
 - With several things selected, the **Save preset** button in the top right saves them as a preset (Preset 1, Preset 2, ...). Presets belong to you, so they can be used on any board.
-- Press **v** to open the menu on the right (press **v** again to close it). Its **Preset** button drops down every saved preset with **Use** (places a copy in the middle of the screen), **Edit** (places it, and the top right button becomes **Update preset**: select what the preset should be and press it to save over the old one) and **Delete**.
+- The keys t, v, b, n and m can be changed in Home's menu (Shortcuts).
+- Press **v** for view mode: nothing on the board can be changed, and hovering a text makes it bigger to read. A switch at the top shows it's on; press **v**, Escape or the switch to leave.
+- Press **m** to open the menu on the right (press **m** again to close it). Its **Preset** button drops down every saved preset with **Use** (places a copy in the middle of the screen), **Edit** (places it, and the top right button becomes **Update preset**: select what the preset should be and press it to save over the old one) and **Delete**.
 - Click something (or select several) and press **Ctrl+C** (Cmd+C) to copy, then **Ctrl+V** (Cmd+V) to paste a copy at the cursor.
 - A picture copied from outside the site (for example **Copy image** in a browser) pastes onto the board with **Ctrl+V** (Cmd+V). Drag it to move it; scroll or pinch while it's selected to resize it.
 - A text dragged above or below a line snaps centred on the line's middle (pink guide).
@@ -117,7 +119,7 @@ signing up on a laptop and tapping the link in the Gmail app on your phone):
 | `src/components/board/TextEditor.tsx` | Typing text (lists, Tab, sizes, bold, colours) |
 | `src/components/board/richText.ts` | Text with parts in different sizes, bold and colours |
 | `src/components/board/snapping.ts` | Lining things up while dragging |
-| `src/components/board/SideMenu.tsx` | The menu opened with v (presets) |
+| `src/components/board/SideMenu.tsx` | The menu opened with m (presets) |
 | `src/components/board/ToolIcon.tsx` | Icons for the phone toolbar |
 | `src/components/board/LineMenu.tsx` | The box beside a clicked line (Time, Angle, Text) |
 | `src/components/board/geometry.ts` | Maths for bent lines and selection boxes |

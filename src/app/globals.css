@@ -84,6 +84,18 @@ body {
   }
 }
 
+/* Board view mode: hovering a text (or a line's label) makes it bigger to read. */
+[data-viewing] [data-text],
+[data-viewing] [data-line-label] {
+  transition: transform 150ms ease-out;
+  cursor: default;
+}
+[data-viewing] [data-text]:hover,
+[data-viewing] [data-line-label]:hover {
+  transform: scale(1.8);
+  z-index: 1000000 !important;
+}
+
 /* A task page's notes (TipTap). */
 .note {
   line-height: 1.6;
