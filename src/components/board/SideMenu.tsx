@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { Settings } from "@/components/Settings";
 import type { Preset } from "./model";
 
 export const SIDE_MENU_W = 256;
 
 // The menu on the right of the board, opened and closed with "m" (or the key chosen in Home's menu).
 // "Preset" drops down every saved preset, each with Use, Edit and Delete.
+// "Settings" has the theme and the shortcut keys, as in Home's menu.
 export function SideMenu({
   presets,
   onUse,
@@ -19,6 +21,7 @@ export function SideMenu({
   onDelete: (p: Preset) => void;
 }) {
   const [presetsOpen, setPresetsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div
@@ -63,6 +66,19 @@ export function SideMenu({
               </div>
             </div>
           ))}
+        </div>
+      )}
+      <button
+        data-settings
+        onClick={() => setSettingsOpen((o) => !o)}
+        className="mt-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm font-medium hover:bg-stone-100"
+      >
+        Settings
+        <span className="text-stone-400">{settingsOpen ? "▾" : "▸"}</span>
+      </button>
+      {settingsOpen && (
+        <div className="mt-1 text-sm">
+          <Settings rowClass="px-2" />
         </div>
       )}
     </div>

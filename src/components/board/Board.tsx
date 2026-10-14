@@ -13,6 +13,8 @@ import {
   CHECKED,
   CIRCLE_SIZE,
   CLICK_SLOP,
+  PRIORITY_REACH,
+  PRIORITY_TEXT_SIZE,
   DEADLINE_MARK,
   DOT_SPACING,
   INK,
@@ -80,6 +82,7 @@ import {
 } from "./icons";
 import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
+import { Popup } from "./Popup";
 import { PriorityPicker } from "./PriorityPicker";
 import { LinkMenu, type AddTarget, type TaskPage } from "./LinkMenu";
 import { ToolIcon } from "./ToolIcon";
@@ -122,6 +125,22 @@ type View = { x: number; y: number; scale: number };
 // Every thickness a line can have, for its arrowheads, and how each is
 // written in an arrowhead's id ("1.5" as "1_5").
 const ARROW_WIDTHS = [...LINE_WIDTHS, ...OLD_LINE_WIDTHS];
+// How wide a line of text is, in board units, at this size (for placing a
+// priority task before it's on the page).
+function textWidth(text: string, size: number) {
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return text.length * size * 0.55;
+  ctx.font = `${size}px ${getComputedStyle(document.body).fontFamily}`;
+  return ctx.measureText(text).width;
+}
+
+// A box made bigger by `by` all round.
+const grow = (b: Box, by: number): Box => ({
+  minX: b.minX - by,
+  minY: b.minY - by,
+  maxX: b.maxX + by,
+  maxY: b.maxY + by,
+});
 const markerWidthId = (w: number) => String(w).replace(".", "_");
 
 // The furthest out the board can be zoomed: the whole board fits on the
@@ -810,10 +829,17 @@ export function Board({
     }
     const scalePt = (p: Point) => (single ? p : { x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f });
     // A text resized on its own keeps its left edge where it is, so it never
-    // needs lining up again.
+    // needs lining up again; so do texts resized together with only other
+    // texts (their left side stays put).
     // (The text starts 4 units in from its box: its px-1 padding.)
     const left = box.minX + 4;
-    const textAt = (t: Text) => (single ? { x: left + (t.x - left) * f, y: t.y } : scalePt(t));
+    const onlyTexts = sel.every((k) => k.startsWith("text:"));
+    const textAt = (t: Text) =>
+      single
+        ? { x: left + (t.x - left) * f, y: t.y }
+        : onlyTexts
+          ? { x: left + (t.x - left) * f, y: scalePt(t).y }
+          : scalePt(t);
 
     setBoard((b) => ({
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, ...scalePt(c), size: c.size * f } : c)),
@@ -1144,6 +1170,18 @@ export function Board({
 
   function onPointerMove(e: React.PointerEvent) {
     pointer.current = { x: e.clientX, y: e.clientY };
+    // Inside the selection box, a hand: it can be dragged around.
+    const gb = groupBoxRef.current;
+    const here = toBoard(e.clientX, e.clientY);
+    const pad = 6 / viewRef.current.scale;
+    const inBox =
+      !!gb &&
+      !drag.current &&
+      here.x >= gb.minX - pad &&
+      here.x <= gb.maxX + pad &&
+      here.y >= gb.minY - pad &&
+      here.y <= gb.maxY + pad;
+    if (rootRef.current) rootRef.current.style.cursor = inBox ? "grab" : "";
     if (draftRef.current) {
       const to = toBoard(e.clientX, e.clientY);
       setDraft((dr) => (dr ? { ...dr, to: straighten(to, dr.from) } : dr));
@@ -1179,9 +1217,19 @@ export function Board({
     const dragged = d.kind === "text" ? o.texts.find((t) => t.id === d.id) : undefined;
     const spot = dragged?.deadline && deadlineSpot(dragged.deadline, o);
     if (dragged && spot) {
-      const off = (dragged.x + dx - spot.p.x) * spot.n.x + (dragged.y + dy - spot.p.y) * spot.n.y;
+      // Only so far from the timeline, and where it was along it.
+      const off = clamp(
+        (dragged.x + dx - spot.p.x) * spot.n.x + (dragged.y + dy - spot.p.y) * spot.n.y,
+        -PRIORITY_REACH,
+        PRIORITY_REACH,
+      );
+      const along = (dragged.x - spot.p.x) * spot.d.x + (dragged.y - spot.p.y) * spot.d.y;
+      const to = {
+        x: spot.p.x + spot.n.x * off + spot.d.x * along,
+        y: spot.p.y + spot.n.y * off + spot.d.y * along,
+      };
       setSnapGuides([]);
-      moveMany([keyOf("text", d.id)], spot.p.x + spot.n.x * off - dragged.x, spot.p.y + spot.n.y * off - dragged.y, o);
+      moveMany([keyOf("text", d.id)], to.x - dragged.x, to.y - dragged.y, o);
       return;
     }
     if (d.kind === "circle" || d.kind === "text" || d.kind === "square" || d.kind === "picture") {
@@ -1425,6 +1473,8 @@ export function Board({
   // something selected, a pinch resizes it instead (a group only when the
   // pinch is inside its box). The toolbar's Line makes the next drag draw a line.
   function onTouchDown(e: React.PointerEvent) {
+    // Where it was pressed, for placing pop-up menus near it.
+    pointer.current = { x: e.clientX, y: e.clientY };
     if (e.pointerType !== "touch") {
       blockedInView(e);
       return;
@@ -1564,15 +1614,20 @@ export function Board({
   // Where a deadline sits on its timeline, and the direction straight across
   // the timeline there, on the side away from its labels (null when the
   // timeline is gone or the deadline isn't on it).
+  // `n` points up from a level timeline and right from an upright one; `d`
+  // runs along it (rightwards, or downwards).
   function deadlineSpot(d: { line: number; at: string }, data: BoardData = board) {
     const l = data.lines.find((x) => x.id === d.line);
     const f = l?.time && dateAlong(l.time, new Date(d.at));
     if (!l || f === null || f === undefined) return null;
     const pts = drawPoints(resolve(l, data));
     const { p, dir } = pointAlong(pts, f * (polylineLength(pts) || 1));
+    const upright = Math.abs(dir.y) > Math.abs(dir.x);
     let n = { x: dir.y, y: -dir.x };
-    if (n.y > 0 || (n.y === 0 && n.x > 0)) n = { x: -n.x, y: -n.y };
-    return { p, n, upright: Math.abs(dir.y) > Math.abs(dir.x) };
+    if (upright ? n.x < 0 : n.y > 0) n = { x: -n.x, y: -n.y };
+    let along = dir;
+    if (upright ? along.y < 0 : along.x < 0) along = { x: -along.x, y: -along.y };
+    return { p, n, d: along, upright };
   }
 
   // A timeline's "Priority task": a bold text with a checkbox and the task,
@@ -1582,7 +1637,11 @@ export function Board({
     const deadline = { line: l.id, at: at.toISOString() };
     const spot = deadlineSpot(deadline);
     if (!spot) return false;
-    const gap = spot.upright ? 72 : 36;
+    // It starts at its date: to the right of an upright timeline, level with
+    // the date; above a level one, its checkbox over the date.
+    const width = textWidth(task, PRIORITY_TEXT_SIZE) + PRIORITY_TEXT_SIZE * 1.15 + 8;
+    const gap = spot.upright ? width / 2 + 20 : PRIORITY_TEXT_SIZE * 1.6;
+    const along = spot.upright ? 0 : width / 2 - 4 - PRIORITY_TEXT_SIZE * 0.42;
     const id = nextId.current++;
     const link = crypto.randomUUID();
     commit();
@@ -1590,12 +1649,12 @@ export function Board({
       ...ts,
       {
         id,
-        x: spot.p.x + spot.n.x * gap,
-        y: spot.p.y + spot.n.y * gap,
+        x: spot.p.x + spot.n.x * gap + spot.d.x * along,
+        y: spot.p.y + spot.n.y * gap + spot.d.y * along,
         text: `${UNCHECKED} ${task}`,
-        fontSize: TEXT_SIZE,
+        fontSize: PRIORITY_TEXT_SIZE,
         color: TEXT_COLORS[0],
-        bold: true,
+        bold: false,
         link,
         deadline,
       },
@@ -2152,9 +2211,83 @@ export function Board({
     `url(#arrowhead-${Math.max(0, TEXT_COLORS.indexOf(l.color ?? INK))}-${markerWidthId(ARROW_WIDTHS.includes(l.width ?? LINE_WIDTH) ? (l.width ?? LINE_WIDTH) : LINE_WIDTH)})`;
   const toPolyline = (pts: Point[]) => pts.map((p) => `${p.x},${p.y}`).join(" ");
   const px = (n: number) => n / view.scale; // a size in screen pixels, in board units
-  // Pop-up menus stay the same size on screen at any zoom, whatever the size
-  // of the thing they belong to.
-  const onScreen = { transform: `scale(${1 / view.scale})` };
+
+  // A timeline's own menu (Phase, Priority task, colours, Pin), shown beside
+  // its line menu.
+  function timelineMenu() {
+    if (!selectedLine || phase) return null;
+    const { labels } = timelineGeometry(selectedLine);
+    if (labels.length < 2) return null;
+    // A phase made between smaller steps only has its colours.
+    const ends = selectedLine.time?.startSub !== undefined;
+    return (
+      <div data-menu="phase" className="flex w-max flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg">
+        {deadlineFor === selectedLine.id ? (
+          <PriorityPicker
+            years={pickerYears(selectedLine.time!)}
+            error={deadlineError}
+            onBack={() => setDeadlineFor(null)}
+            onDone={(at, task) => {
+              if (!addDeadlineText(selectedLine, at, task))
+                return setDeadlineError("That date isn't on this timeline.");
+              setDeadlineFor(null);
+              setSelection([]);
+            }}
+          />
+        ) : (
+          <>
+            {!ends && (
+              <button
+                onClick={() => {
+                  setSelection([]);
+                  setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
+                }}
+                className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+              >
+                Phase
+              </button>
+            )}
+            {!ends && planner && (
+              <button
+                data-priority-task-button
+                onClick={() => {
+                  setDeadlineFor(selectedLine.id);
+                  setDeadlineError(null);
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+              >
+                <ClockIcon />
+                Priority task
+              </button>
+            )}
+            <div className="flex gap-1.5 px-2 py-1.5">
+              {TEXT_COLORS.map((color) => (
+                <button
+                  key={color}
+                  aria-label={`Colour ${color}`}
+                  onClick={() => updateLine(selectedLine.id, { color })}
+                  className={`size-5 rounded-full ${(selectedLine.color ?? INK) === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                  style={{ background: color }}
+                />
+              ))}
+            </div>
+            {!ends && (
+              <button
+                onClick={() => {
+                  setSelection([]);
+                  setPhase({ lineId: selectedLine.id, start: null, hover: 0, pin: true });
+                }}
+                aria-label="Pin"
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100"
+              >
+                <PinIcon />
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -2606,10 +2739,17 @@ export function Board({
                                   width: "0.85em",
                                   height: "0.85em",
                                   marginRight: "0.3em",
-                                  border: `0.09em solid ${boxColor}`,
+                                  border: `${t.deadline ? 0.12 : 0.09}em solid ${boxColor}`,
+                                  // A priority task's ticked box is filled, with a white tick.
+                                  background: t.deadline && line[0] === CHECKED ? boxColor : undefined,
                                 }}
                               >
-                                {line[0] === CHECKED && <CheckMark color={boxColor} />}
+                                {line[0] === CHECKED &&
+                                  (t.deadline ? (
+                                    <CheckMark color="#fff" width={2.2} />
+                                  ) : (
+                                    <CheckMark color={boxColor} />
+                                  ))}
                               </span>
                             </span>
                           )}
@@ -2641,96 +2781,97 @@ export function Board({
                     {Math.round(t.fontSize)}px
                   </div>
                 )}
-
-                {showMenu && (
-                  <div
-                    data-menu="text"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className="absolute left-full top-0 flex origin-top-left flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
-                    style={{ ...onScreen, marginLeft: px(8), zIndex: TOP_LAYER }}
-                  >
-                    <div className="flex gap-1.5">
-                      {TEXT_COLORS.map((color) => (
-                        <button
-                          key={color}
-                          aria-label={`Colour ${color}`}
-                          onClick={() => updateText(t.id, { color })}
-                          className={`size-5 rounded-full ${t.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
-                          style={{ background: color }}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex gap-1">
-                      <button
-                        aria-label="Checklist"
-                        onClick={() => makeList(t, "check")}
-                        className="flex items-center rounded px-2 py-1 hover:bg-stone-100"
-                      >
-                        <ChecklistIcon />
-                      </button>
-                      <button
-                        aria-label="Bullet points"
-                        onClick={() => makeList(t, "bullet")}
-                        className="rounded px-2 py-1 text-sm hover:bg-stone-100"
-                      >
-                        {BULLET}
-                      </button>
-                      <button
-                        onClick={() => makeList(t, "number")}
-                        className="rounded px-2 py-1 text-sm hover:bg-stone-100"
-                      >
-                        1.2.3.
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => updateText(t.id, { bold: !t.bold })}
-                        className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
-                      >
-                        Bold
-                      </button>
-                      {/* Background fill for the whole text (none to start with). */}
-                      <button
-                        aria-label="No fill"
-                        onClick={() => updateText(t.id, { bg: undefined })}
-                        className={`size-5 rounded border border-stone-300 bg-[linear-gradient(135deg,transparent_45%,#d6d3d1_45%,#d6d3d1_55%,transparent_55%)] ${t.bg ? "" : "ring-2 ring-stone-400 ring-offset-1"}`}
-                      />
-                      {TEXT_FILLS.map((fill) => (
-                        <button
-                          key={fill}
-                          aria-label={`Fill ${fill}`}
-                          onClick={() => updateText(t.id, { bg: fill })}
-                          className={`size-5 rounded border border-stone-200 ${t.bg === fill ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
-                          style={{ background: fill }}
-                        />
-                      ))}
-                    </div>
-                    {layerButton(keyOf("text", t.id))}
-                    {/* A priority task: delete it for good, here and on Home. */}
-                    {t.deadline && (
-                      <button
-                        data-delete-deadline
-                        onClick={() => {
-                          if (!window.confirm("Delete this priority task for good? It's removed from Home too."))
-                            return;
-                          setSelection([]);
-                          removeKeys([keyOf("text", t.id)]);
-                          if (t.link) void planner?.removePriority?.(t.link).catch(() => {});
-                        }}
-                        className="flex items-center gap-2 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
-                      >
-                        <TrashIcon />
-                        Delete
-                      </button>
-                    )}
-                    {planner ? (
-                      <LinkMenu onAdd={(to) => addTextTo(t, to)} taskPages={planner.taskPages} />
-                    ) : (
-                      <LinkButton />
-                    )}
-                  </div>
-                )}
               </div>
+              {showMenu && (
+                <Popup
+                  key={t.id}
+                  data-menu="text"
+                  around={boxOf(keyOf("text", t.id)) ?? { minX: t.x, minY: t.y, maxX: t.x, maxY: t.y }}
+                  mouse={pointer.current}
+                  view={view}
+                  origin={t}
+                  className="flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
+                >
+                  <div className="flex gap-1.5">
+                    {TEXT_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        aria-label={`Colour ${color}`}
+                        onClick={() => updateText(t.id, { color })}
+                        className={`size-5 rounded-full ${t.color === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                        style={{ background: color }}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      aria-label="Checklist"
+                      onClick={() => makeList(t, "check")}
+                      className="flex items-center rounded px-2 py-1 hover:bg-stone-100"
+                    >
+                      <ChecklistIcon />
+                    </button>
+                    <button
+                      aria-label="Bullet points"
+                      onClick={() => makeList(t, "bullet")}
+                      className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                    >
+                      {BULLET}
+                    </button>
+                    <button
+                      onClick={() => makeList(t, "number")}
+                      className="rounded px-2 py-1 text-sm hover:bg-stone-100"
+                    >
+                      1.2.3.
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => updateText(t.id, { bold: !t.bold })}
+                      className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                    >
+                      Bold
+                    </button>
+                    {/* Background fill for the whole text (none to start with). */}
+                    <button
+                      aria-label="No fill"
+                      onClick={() => updateText(t.id, { bg: undefined })}
+                      className={`size-5 rounded border border-stone-300 bg-[linear-gradient(135deg,transparent_45%,#d6d3d1_45%,#d6d3d1_55%,transparent_55%)] ${t.bg ? "" : "ring-2 ring-stone-400 ring-offset-1"}`}
+                    />
+                    {TEXT_FILLS.map((fill) => (
+                      <button
+                        key={fill}
+                        aria-label={`Fill ${fill}`}
+                        onClick={() => updateText(t.id, { bg: fill })}
+                        className={`size-5 rounded border border-stone-200 ${t.bg === fill ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                        style={{ background: fill }}
+                      />
+                    ))}
+                  </div>
+                  {layerButton(keyOf("text", t.id))}
+                  {/* A priority task: delete it for good, here and on Home. */}
+                  {t.deadline && (
+                    <button
+                      data-delete-deadline
+                      onClick={() => {
+                        if (!window.confirm("Delete this priority task for good? It's removed from Home too.")) return;
+                        setSelection([]);
+                        removeKeys([keyOf("text", t.id)]);
+                        if (t.link) void planner?.removePriority?.(t.link).catch(() => {});
+                      }}
+                      className="flex items-center gap-2 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      <TrashIcon />
+                      Delete
+                    </button>
+                  )}
+                  {planner ? (
+                    <LinkMenu onAdd={(to) => addTextTo(t, to)} taskPages={planner.taskPages} />
+                  ) : (
+                    <LinkButton />
+                  )}
+                </Popup>
+              )}
             </div>
           );
         })}
@@ -2741,14 +2882,16 @@ export function Board({
             const layer = p && layerButton(keyOf("picture", p.id));
             if (!p || !layer) return null;
             return (
-              <div
+              <Popup
+                key={p.id}
                 data-menu="picture"
-                onPointerDown={(e) => e.stopPropagation()}
-                className="absolute min-w-40 origin-top-left rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-                style={{ ...onScreen, left: p.x + p.w / 2 + px(8), top: p.y - p.h / 2, zIndex: TOP_LAYER }}
+                around={boxOf(keyOf("picture", p.id))!}
+                mouse={pointer.current}
+                view={view}
+                className="min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
               >
                 {layer}
-              </div>
+              </Popup>
             );
           })()}
 
@@ -2761,13 +2904,15 @@ export function Board({
             return (
               <>
                 {/* The menu goes underneath the handles so it never hides an end. */}
-                <div
-                  className="absolute origin-top-left"
-                  style={(() => {
-                    const mid = pointAlong(pts, polylineLength(pts) / 2).p;
-                    return { ...onScreen, left: mid.x + px(12), top: mid.y + px(12), zIndex: TOP_LAYER };
-                  })()}
+                <Popup
+                  key={l.id}
+                  // Clear of the line's ends and their arrow buttons.
+                  around={grow(boxAround(pts), px(40))}
+                  mouse={pointer.current}
+                  view={view}
+                  className="flex items-start gap-2"
                 >
+                  {timelineMenu()}
                   <LineMenu
                     key={l.id}
                     time={l.time}
@@ -2785,7 +2930,7 @@ export function Board({
                       setEditingLineLabel(l.id);
                     }}
                   />
-                </div>
+                </Popup>
                 <svg
                   className="pointer-events-none absolute left-0 top-0 overflow-visible"
                   width={BOARD_W}
@@ -2885,97 +3030,6 @@ export function Board({
             );
           })()}
 
-        {selectedLine &&
-          !phase &&
-          (() => {
-            const { pts, labels, len } = timelineGeometry(selectedLine);
-            if (labels.length < 2) return null;
-            // A phase made between smaller steps only has its colours.
-            const ends = selectedLine.time?.startSub !== undefined;
-            const { p: at, dir } = pointAlong(pts, len / 3);
-            // Beside the line, on its upper or left side, clear of the line
-            // itself so it never covers an end dot.
-            let n = { x: dir.y, y: -dir.x };
-            if (n.y > 1e-6 || (Math.abs(n.y) <= 1e-6 && n.x > 0)) n = { x: -n.x, y: -n.y };
-            const toSide = Math.abs(n.x) > Math.abs(n.y);
-            return (
-              <div
-                className="absolute origin-top-left"
-                style={{ ...onScreen, left: at.x + n.x * px(14), top: at.y + n.y * px(14), zIndex: TOP_LAYER }}
-              >
-                <div
-                  data-menu="phase"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className={`absolute flex w-max flex-col rounded-lg border border-stone-200 bg-white p-1 shadow-lg ${toSide ? "-translate-x-full -translate-y-1/2" : "-translate-x-1/2 -translate-y-full"}`}
-                >
-                  {deadlineFor === selectedLine.id ? (
-                    <PriorityPicker
-                      years={pickerYears(selectedLine.time!)}
-                      error={deadlineError}
-                      onBack={() => setDeadlineFor(null)}
-                      onDone={(at, task) => {
-                        if (!addDeadlineText(selectedLine, at, task))
-                          return setDeadlineError("That date isn't on this timeline.");
-                        setDeadlineFor(null);
-                        setSelection([]);
-                      }}
-                    />
-                  ) : (
-                    <>
-                      {!ends && (
-                        <button
-                          onClick={() => {
-                            setSelection([]);
-                            setPhase({ lineId: selectedLine.id, start: null, hover: 0 });
-                          }}
-                          className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
-                        >
-                          Phase
-                        </button>
-                      )}
-                      {!ends && planner && (
-                        <button
-                          data-priority-task-button
-                          onClick={() => {
-                            setDeadlineFor(selectedLine.id);
-                            setDeadlineError(null);
-                          }}
-                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
-                        >
-                          <ClockIcon />
-                          Priority task
-                        </button>
-                      )}
-                      <div className="flex gap-1.5 px-2 py-1.5">
-                        {TEXT_COLORS.map((color) => (
-                          <button
-                            key={color}
-                            aria-label={`Colour ${color}`}
-                            onClick={() => updateLine(selectedLine.id, { color })}
-                            className={`size-5 rounded-full ${(selectedLine.color ?? INK) === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
-                            style={{ background: color }}
-                          />
-                        ))}
-                      </div>
-                      {!ends && (
-                        <button
-                          onClick={() => {
-                            setSelection([]);
-                            setPhase({ lineId: selectedLine.id, start: null, hover: 0, pin: true });
-                          }}
-                          aria-label="Pin"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100"
-                        >
-                          <PinIcon />
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
         {pinMenu &&
           (() => {
             const l = lines.find((x) => x.id === pinMenu.lineId);
@@ -2986,19 +3040,19 @@ export function Board({
             if (i < 0) return null;
             const at = pointAlong(pts, i * spacing).p;
             return (
-              <div
-                className="absolute origin-top-left"
-                style={{
-                  ...onScreen,
-                  left: at.x,
-                  top: at.y + MAJOR_TICK * PIN_GROW + TICK_LABEL_SIZE * PIN_GROW * 2 + px(8),
-                  zIndex: TOP_LAYER,
-                }}
+              <Popup
+                key={`${l.id}-${pin.value}`}
+                // Clear of the mark and its label.
+                around={grow(
+                  { minX: at.x, minY: at.y, maxX: at.x, maxY: at.y },
+                  MAJOR_TICK * PIN_GROW + TICK_LABEL_SIZE * PIN_GROW * 2,
+                )}
+                mouse={pointer.current}
+                view={view}
               >
                 <div
                   data-menu="pin"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="absolute flex w-max -translate-x-1/2 items-center gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
+                  className="flex w-max items-center gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-lg"
                 >
                   <button
                     aria-label="Bold"
@@ -3020,21 +3074,18 @@ export function Board({
                     ))}
                   </div>
                 </div>
-              </div>
+              </Popup>
             );
           })()}
 
         {menuCircle && (
-          <div
+          <Popup
+            key={menuCircle.id}
             data-menu="circle"
-            onPointerDown={(e) => e.stopPropagation()}
-            className="absolute min-w-40 origin-top-left rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-            style={{
-              ...onScreen,
-              left: menuCircle.x + menuCircle.size / 2 + px(8),
-              top: menuCircle.y - menuCircle.size / 2,
-              zIndex: TOP_LAYER,
-            }}
+            around={boxOf(keyOf("circle", menuCircle.id))!}
+            mouse={pointer.current}
+            view={view}
+            className="min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
           >
             <button
               onClick={() => circleToText(menuCircle)}
@@ -3051,7 +3102,7 @@ export function Board({
             </button>
             {layerButton(keyOf("circle", menuCircle.id))}
             <LinkButton />
-          </div>
+          </Popup>
         )}
 
         {menuSquare &&
@@ -3078,16 +3129,14 @@ export function Board({
           ))}
 
         {menuSquare && (
-          <div
+          <Popup
+            key={menuSquare.id}
             data-menu="square"
-            onPointerDown={(e) => e.stopPropagation()}
-            className="absolute flex min-w-40 origin-top-left flex-col gap-1 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
-            style={{
-              ...onScreen,
-              left: menuSquare.x + menuSquare.w / 2 + px(16),
-              top: menuSquare.y - menuSquare.h / 2,
-              zIndex: TOP_LAYER,
-            }}
+            // Clear of its corner handles.
+            around={grow(boxOf(keyOf("square", menuSquare.id))!, px(6))}
+            mouse={pointer.current}
+            view={view}
+            className="flex min-w-40 flex-col gap-1 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
           >
             <div className="flex gap-1.5 px-1 py-1">
               {TEXT_COLORS.map((color) => (
@@ -3111,9 +3160,11 @@ export function Board({
             </button>
             {layerButton(keyOf("square", menuSquare.id))}
             <LinkButton />
-          </div>
+          </Popup>
         )}
 
+        {/* The selection box: white and dashed (with a faint dark edge so it
+            shows on the white board), a small square on each corner. */}
         {groupBox && (
           <div
             data-group-box
@@ -3124,22 +3175,40 @@ export function Board({
               width: groupBox.maxX - groupBox.minX + px(12),
               height: groupBox.maxY - groupBox.minY + px(12),
               borderWidth: px(1.5),
-              borderColor: SELECT_BLUE,
+              borderColor: "white",
+              filter: `drop-shadow(0 0 ${px(1)}px rgb(0 0 0 / 0.55))`,
               zIndex: TOP_LAYER,
             }}
-          />
+          >
+            {[
+              [0, 0],
+              [1, 0],
+              [1, 1],
+              [0, 1],
+            ].map(([cx, cy], i) => (
+              <span
+                key={i}
+                data-group-corner={i}
+                className="absolute bg-white"
+                style={{
+                  width: px(8),
+                  height: px(8),
+                  left: `calc(${cx * 100}% - ${px(4) + px(0.75)}px)`,
+                  top: `calc(${cy * 100}% - ${px(4) + px(0.75)}px)`,
+                  border: `${px(1)}px solid rgb(0 0 0 / 0.35)`,
+                }}
+              />
+            ))}
+          </div>
         )}
         {groupBox && (
           // Beside the selection box; stays the same size on screen.
-          <div
-            onPointerDown={(e) => e.stopPropagation()}
-            className="absolute flex origin-top-left flex-col items-start gap-1"
-            style={{
-              left: groupBox.maxX + px(12),
-              top: groupBox.minY - px(6),
-              transform: `scale(${1 / view.scale})`,
-              zIndex: TOP_LAYER,
-            }}
+          <Popup
+            key={selection.join()}
+            around={grow(groupBox, px(10))}
+            mouse={pointer.current}
+            view={view}
+            className="flex flex-col items-start gap-1"
           >
             <button
               data-group-button
@@ -3181,7 +3250,7 @@ export function Board({
                 />
               ))}
             </div>
-          </div>
+          </Popup>
         )}
       </div>
 

@@ -59,6 +59,9 @@ export function TodayBox({ email }: { email?: string }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [past, setPast] = useState<Day[] | null>(null);
   const [showPast, setShowPast] = useState(false);
+  // Past days opened to show their lists, and whether only undone tasks show.
+  const [openDays, setOpenDays] = useState<Set<string>>(new Set());
+  const [undone, setUndone] = useState(false);
   const showPastRef = useRef(showPast);
   showPastRef.current = showPast;
 
@@ -137,36 +140,90 @@ export function TodayBox({ email }: { email?: string }) {
         <p className="mt-1 text-xs text-red-600">Couldn&apos;t save. Check your connection.</p>
       )}
       {showPast && (
-        <div data-past-days className="mt-2 max-h-64 space-y-3 overflow-y-auto border-t border-stone-100 pt-2">
-          <div className="text-sm font-semibold">Past to-dos</div>
+        <div data-past-days className="mt-2 max-h-64 space-y-1 overflow-y-auto border-t border-stone-100 pt-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">Past to-dos</div>
+            {/* Every task left unticked, with its day. */}
+            <button
+              type="button"
+              data-show-undone
+              aria-pressed={undone}
+              onClick={() => setUndone((u) => !u)}
+              className={`rounded-md px-2 py-0.5 text-xs transition ${undone ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-100 hover:text-stone-800"}`}
+            >
+              Undone
+            </button>
+          </div>
           {past === null && <p className="text-sm text-stone-400">Loading…</p>}
           {past?.length === 0 && (
             <p className="text-sm text-stone-400">
               No past days yet{keepsForever(email) ? "." : " (they're kept 30 days)."}
             </p>
           )}
-          {past?.map((d) => (
-            <div key={d.day}>
-              <div className="text-xs font-medium text-stone-500">
-                {parseDate(d.day).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-              </div>
-              {d.items
-                .filter((t) => t.text.trim())
-                .map((t) => (
-                  <div key={t.id} className="flex items-center gap-2 py-0.5 text-sm">
-                    <span className="relative size-3.5 shrink-0 rounded-[3px] border-[1.5px] border-stone-400">
-                      {t.done && <CheckMark color={INK} />}
-                    </span>
-                    <span className={t.done ? "text-stone-400 line-through" : "text-stone-600"}>{t.text}</span>
-                  </div>
-                ))}
+          {past && undone && (
+            <div data-undone-list>
+              {past.flatMap((d) =>
+                d.items
+                  .filter((t) => t.text.trim() && !t.done)
+                  .map((t) => (
+                    <div key={`${d.day}-${t.id}`} className="flex items-center gap-2 py-0.5 text-sm">
+                      <span className="size-3.5 shrink-0 rounded-[3px] border-[1.5px] border-stone-400" />
+                      <span className="min-w-0 flex-1 truncate text-stone-600">{t.text}</span>
+                      <span className="shrink-0 text-xs text-stone-400">{dayLabel(d.day)}</span>
+                    </div>
+                  )),
+              )}
+              {past.every((d) => d.items.every((t) => t.done || !t.text.trim())) && (
+                <p className="text-sm text-stone-400">Nothing left undone.</p>
+              )}
             </div>
-          ))}
+          )}
+          {/* Each day; tap one to see its list. */}
+          {!undone &&
+            past?.map((d) => {
+              const open = openDays.has(d.day);
+              return (
+                <div key={d.day}>
+                  <button
+                    type="button"
+                    data-past-day={d.day}
+                    aria-expanded={open}
+                    onClick={() =>
+                      setOpenDays((s) => {
+                        const next = new Set(s);
+                        if (open) next.delete(d.day);
+                        else next.add(d.day);
+                        return next;
+                      })
+                    }
+                    className="flex w-full items-center justify-between rounded px-1 py-0.5 text-left text-xs font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+                  >
+                    {dayLabel(d.day)}
+                    <span className="text-stone-400">{open ? "▾" : "▸"}</span>
+                  </button>
+                  {open &&
+                    d.items
+                      .filter((t) => t.text.trim())
+                      .map((t) => (
+                        <div key={t.id} className="flex items-center gap-2 py-0.5 pl-1 text-sm">
+                          <span className="relative size-3.5 shrink-0 rounded-[3px] border-[1.5px] border-stone-400">
+                            {t.done && <CheckMark color={INK} />}
+                          </span>
+                          <span className={t.done ? "text-stone-400 line-through" : "text-stone-600"}>{t.text}</span>
+                        </div>
+                      ))}
+                </div>
+              );
+            })}
         </div>
       )}
     </section>
   );
 }
+
+// "Mon, Oct 12".
+const dayLabel = (day: string) =>
+  parseDate(day).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
 function ArchiveIcon() {
   return (

@@ -17,7 +17,7 @@ function countdown(p: Phase | null) {
   const n = daysUntil(p.end);
   if (n < 0) return "Milestone ended";
   if (n === 0) return "Last day of the milestone";
-  return `${n} ${n === 1 ? "day" : "days"} until the milestone ends`;
+  return `${n} ${n === 1 ? "day" : "days"} until milestone`;
 }
 
 // Home: who's logged in on the left, a menu on the right (trash and Log out),
@@ -53,7 +53,7 @@ export function HomeView({ email }: { email?: string }) {
         {/* Padded (and pulled back out) so the to-do box's Tomorrow glow isn't cut off. */}
         <aside
           data-planner
-          className="flex w-full flex-col gap-4 sm:max-w-sm xl:-mx-4 xl:-mt-4 xl:w-auto xl:max-w-none xl:overflow-y-auto xl:p-4"
+          className="flex w-full flex-col gap-4 sm:max-w-sm xl:-mx-4 xl:-mt-4 xl:w-auto xl:max-w-none xl:overflow-y-auto xl:overflow-x-hidden xl:p-4"
         >
           <TodayBox email={email} />
           <PhaseBox phase={phase.value} onChange={phase.change} />

@@ -1,16 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ACTIONS,
-  DEFAULT_SHORTCUTS,
-  getShortcuts,
-  saveShortcuts,
-  withKey,
-  type Action,
-  type Shortcuts,
-} from "@/lib/shortcuts";
-import { getTheme, setTheme, type Theme } from "@/lib/theme";
+import { Settings } from "@/components/Settings";
 import { signOut } from "../actions";
 import { TrashList, type Boards } from "../BoardList";
 
@@ -21,16 +12,6 @@ import { TrashList, type Boards } from "../BoardList";
 export function AccountMenu({ boards }: { boards: Boards }) {
   const [open, setOpen] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
-  const [theme, setThemeState] = useState<Theme>("light");
-  const [showKeys, setShowKeys] = useState(false);
-  const [keys, setKeys] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
-  // The action whose key box is waiting for a key.
-  const [listening, setListening] = useState<Action | null>(null);
-
-  function changeKeys(next: Shortcuts) {
-    setKeys(next);
-    saveShortcuts(next);
-  }
   const { trash } = boards;
 
   function emptyTrash() {
@@ -43,11 +24,7 @@ export function AccountMenu({ boards }: { boards: Boards }) {
     <div className="relative">
       <button
         aria-label="Menu"
-        onClick={() => {
-          setThemeState(getTheme());
-          setKeys(getShortcuts());
-          setOpen((o) => !o);
-        }}
+        onClick={() => setOpen((o) => !o)}
         className="rounded-md px-2.5 py-1 text-lg leading-none hover:bg-stone-100"
       >
         ☰
@@ -59,64 +36,7 @@ export function AccountMenu({ boards }: { boards: Boards }) {
             data-account-menu
             className="absolute right-0 top-full z-20 mt-1 w-72 rounded-md border border-stone-200 bg-white py-1 text-sm shadow-lg"
           >
-            <div data-theme-picker className="flex items-center justify-between gap-2 px-3 py-1.5">
-              Theme
-              <div className="flex rounded-md bg-stone-100 p-0.5">
-                {(["light", "dark"] as const).map((t) => (
-                  <button
-                    key={t}
-                    data-theme-choice={t}
-                    aria-pressed={theme === t}
-                    onClick={() => {
-                      setTheme(t);
-                      setThemeState(t);
-                    }}
-                    className={`rounded px-2.5 py-0.5 ${theme === t ? "bg-white font-medium shadow-sm" : "text-stone-500 hover:text-stone-900"}`}
-                  >
-                    {t === "light" ? "Light" : "Dark"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              data-shortcuts
-              onClick={() => setShowKeys((k) => !k)}
-              className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-stone-100"
-            >
-              Shortcuts <span className="text-stone-400">{showKeys ? "▾" : "▸"}</span>
-            </button>
-            {showKeys && (
-              <div className="border-y border-stone-100 px-3 py-1.5">
-                {ACTIONS.map(({ action, label }) => (
-                  <div key={action} className="flex items-center justify-between py-0.5">
-                    <span className="text-stone-600">{label}</span>
-                    <button
-                      data-shortcut={action}
-                      onClick={() => setListening(listening === action ? null : action)}
-                      onBlur={() => setListening(null)}
-                      onKeyDown={(e) => {
-                        if (listening !== action) return;
-                        e.preventDefault();
-                        if (e.key === "Escape") return setListening(null);
-                        // One letter or number.
-                        if (!/^[a-z0-9]$/i.test(e.key)) return;
-                        changeKeys(withKey(keys, action, e.key.toLowerCase()));
-                        setListening(null);
-                      }}
-                      className={`min-w-14 rounded-md border px-2 py-0.5 text-center font-mono text-xs uppercase ${listening === action ? "border-stone-900 text-stone-400" : "border-stone-300 hover:bg-stone-100"}`}
-                    >
-                      {listening === action ? "press" : keys[action]}
-                    </button>
-                  </div>
-                ))}
-                <button
-                  onClick={() => changeKeys(DEFAULT_SHORTCUTS)}
-                  className="mt-1 text-xs text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline"
-                >
-                  Reset to T, V, B, N, M
-                </button>
-              </div>
-            )}
+            <Settings />
             <button
               onClick={() => setShowTrash((t) => !t)}
               className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-stone-100"

@@ -120,14 +120,14 @@ export function ChecklistIcon() {
 }
 
 // The tick drawn inside a checked checklist box.
-export function CheckMark({ color }: { color: string }) {
+export function CheckMark({ color, width = 1.6 }: { color: string; width?: number }) {
   return (
     <svg
       viewBox="0 0 10 10"
       className="absolute inset-0 size-full"
       fill="none"
       stroke={color}
-      strokeWidth="1.6"
+      strokeWidth={width}
       strokeLinecap="round"
       strokeLinejoin="round"
     >

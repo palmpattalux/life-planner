@@ -32,6 +32,10 @@ export const INDENT = "    ";
 export const PHASE_ORANGE = "#f97316";
 // The arrow on every timeline at today's date ("Now").
 export const NOW_RED = "#ef4444";
+// A priority task's text size, and how far it can be dragged away from its
+// timeline.
+export const PRIORITY_TEXT_SIZE = 14;
+export const PRIORITY_REACH = 160;
 // How far a priority task's line reaches out each side of its timeline.
 export const DEADLINE_MARK = 18;
 // How far a new phase sits from the timeline it was made from, in board units.

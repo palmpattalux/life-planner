@@ -12,9 +12,12 @@ export function PriorityPicker({
   error,
   onDone,
   onBack,
+  dateOnly = false,
 }: {
   years: number[];
   error: string | null;
+  // Only the date: done once the day is picked (or skipped), no task to type.
+  dateOnly?: boolean;
   // Whether this deadline can go on the timeline (shown as `error` if not).
   onDone: (deadline: Date, task: string) => void;
   onBack: () => void;
@@ -89,7 +92,8 @@ export function PriorityPicker({
               data-day={i + 1}
               onClick={() => {
                 setDay(i + 1);
-                setStep("task");
+                if (dateOnly) onDone(new Date(year ?? thisYear, month ?? 0, i + 1), "");
+                else setStep("task");
               }}
               className="rounded py-1 text-xs hover:bg-stone-100"
             >
@@ -132,7 +136,7 @@ export function PriorityPicker({
           <button
             type="button"
             data-picker-skip
-            onClick={() => setStep("task")}
+            onClick={() => (dateOnly ? onDone(deadline(), "") : setStep("task"))}
             className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
           >
             Skip

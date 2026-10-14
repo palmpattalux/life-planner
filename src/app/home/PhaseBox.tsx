@@ -144,9 +144,13 @@ export function PhaseBox({ phase, onChange }: { phase: Phase | null; onChange: (
                   void openPage(t);
                 }}
                 data-pop
-                className="animate-pop rounded-full px-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                className="group/note relative animate-pop rounded-full px-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
               >
                 {opening === t.id ? "…" : "→"}
+                {/* "Note" over the arrow while it's hovered. */}
+                <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-stone-900 px-1.5 py-0.5 text-[11px] text-white opacity-0 transition-opacity group-hover/note:opacity-100">
+                  Note
+                </span>
               </button>
             )}
           />
