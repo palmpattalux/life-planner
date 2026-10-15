@@ -14,7 +14,9 @@ import {
   type Task,
 } from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
+import { TrashIcon } from "@/components/board/icons";
 import { Checklist } from "./Checklist";
+import { Popover } from "./Popover";
 
 const UNITS: { unit: PhaseUnit; label: string }[] = [
   { unit: "day", label: "Day" },
@@ -63,13 +65,17 @@ export function phaseDates(p: Phase): [string, string] | null {
 
 // The phase goal: its dates on top (click to pick them) and its tasks
 // underneath. Hovering a task (or pressing it on a phone) shows an arrow
-// after it that opens the task's own page (made the first time).
+// after it that opens the task's own page (made the first time), and a trash
+// icon that deletes the task (asking first).
 export function PhaseBox({ phase, onChange }: { phase: Phase | null; onChange: (p: Phase) => void }) {
   const supabase = useMemo(createClient, []);
   const router = useRouter();
   const [picking, setPicking] = useState(false);
   const [focus, setFocus] = useState(0);
   const [opening, setOpening] = useState<string | null>(null);
+  // The task whose delete question is showing, and its line.
+  const [deleting, setDeleting] = useState<{ id: string; el: HTMLElement } | null>(null);
+  const deletingTask = deleting && phase?.tasks.find((t) => t.id === deleting.id);
   // When the date menu last closed (pressing the dates closes it; that same
   // press shouldn't open it again).
   const closedAt = useRef(0);
@@ -134,28 +140,68 @@ export function PhaseBox({ phase, onChange }: { phase: Phase | null; onChange: (
             onCheck={(t, done) => t.link && void setLinkDone(supabase, t.link, done).catch(() => {})}
             focusRequest={focus}
             arrow={(t) => (
-              <button
-                type="button"
-                data-task-arrow
-                aria-label={`Open "${t.text}"`}
-                // On press, before the line loses focus (which hides the arrow on a phone).
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  void openPage(t);
-                }}
-                data-pop
-                className="group/note relative animate-pop rounded-full px-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
-              >
-                {opening === t.id ? "…" : "→"}
-                {/* "Note" over the arrow while it's hovered. */}
-                <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-stone-900 px-1.5 py-0.5 text-[11px] text-white opacity-0 transition-opacity group-hover/note:opacity-100">
-                  Note
-                </span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  data-task-arrow
+                  aria-label={`Open "${t.text}"`}
+                  // On press, before the line loses focus (which hides the arrow on a phone).
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    void openPage(t);
+                  }}
+                  data-pop
+                  className="group/note relative animate-pop rounded-full px-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                >
+                  {opening === t.id ? "…" : "→"}
+                  {/* "Note" over the arrow while it's hovered. */}
+                  <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-stone-900 px-1.5 py-0.5 text-[11px] text-white opacity-0 transition-opacity group-hover/note:opacity-100">
+                    Note
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-delete-milestone
+                  aria-label={`Delete "${t.text}"`}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    setDeleting({ id: t.id, el: e.currentTarget.closest<HTMLElement>("[data-task]")! });
+                  }}
+                  className="animate-pop rounded-full p-0.5 text-stone-400 hover:bg-red-50 hover:text-red-600"
+                >
+                  <TrashIcon />
+                </button>
+              </>
             )}
           />
         )}
       </div>
+      {/* Deleting a task asks first, right by it. */}
+      {phase && deletingTask && (
+        <Popover data-delete-confirm anchor={deleting.el} onClose={() => setDeleting(null)} className="w-60">
+          <p className="text-sm text-stone-800">Delete &ldquo;{deletingTask.text}&rdquo;?</p>
+          <div className="mt-2 flex justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => setDeleting(null)}
+              className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-confirm-delete
+              onClick={() => {
+                setDeleting(null);
+                onChange({ ...phase, tasks: phase.tasks.filter((x) => x.id !== deletingTask.id) });
+              }}
+              className="rounded bg-red-600 px-2 py-1 text-sm font-medium text-white hover:bg-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </Popover>
+      )}
     </section>
   );
 }
