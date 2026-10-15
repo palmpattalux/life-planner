@@ -49,12 +49,13 @@ function pointAt(el: HTMLElement, n: number): { node: Node; offset: number } {
   return found ?? { node: el, offset: el.childNodes.length };
 }
 
-// The text being typed. Enter (or clicking elsewhere) confirms it; a space
-// then Enter starts a new line.
+// The text being typed, like in Canva or Notion: Enter (or Shift+Enter)
+// starts a new line; clicking elsewhere or Escape finishes. Pasted text keeps
+// its lines but not its styling.
 // Tab moves the caret's line right and Shift+Tab moves it back. With `lists`,
-// a new line from a checklist line starts with a box, and from a numbered
-// line with the next number. Space then Enter on a line holding only the box
-// or number ends the list; the same goes for bullet points, which "-" then a space
+// Enter on a checklist line starts the next line with a box, and on a numbered
+// line with the next number. Enter on a line holding only the box or number
+// ends the list; the same goes for bullet points, which "-" then a space
 // starts. With `initialRuns`, a bar shows above the text while something is
 // highlighted: bold (or Ctrl+B), colours, background fills, and turning the
 // highlighted lines into a numbered list, bullet points or a checklist.
@@ -211,11 +212,21 @@ export function TextEditor({
         suppressContentEditableWarning
         onPointerDown={(e) => e.stopPropagation()}
         onPaste={(e) => {
-          // Paste words only, not another page's styling.
+          // Paste words only, not another page's styling, keeping their lines.
           e.preventDefault();
-          document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
+          const lines = e.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n").split("\n");
+          lines.forEach((line, i) => {
+            if (i > 0) document.execCommand("insertLineBreak");
+            if (line) document.execCommand("insertText", false, line);
+          });
         }}
         onKeyDown={(e) => {
+          // Escape finishes, like clicking elsewhere.
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.currentTarget.blur();
+            return;
+          }
           if (rich && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
             e.preventDefault();
             format("bold");
@@ -250,14 +261,7 @@ export function TextEditor({
           }
           if (e.key === "Enter") {
             e.preventDefault();
-            const before = textBeforeCaret(e.currentTarget);
-            // Enter on its own confirms the text. A space then Enter starts a
-            // new line instead (the space goes).
-            if (!before.endsWith(" ")) {
-              e.currentTarget.blur();
-              return;
-            }
-            const full = lists ? before : "";
+            const full = lists ? textBeforeCaret(e.currentTarget) : "";
             const indent = full.match(/^ */)![0];
             const line = full.slice(indent.length);
             const number = line.match(/^(\d+)\. /);
@@ -273,7 +277,6 @@ export function TextEditor({
               for (let i = 0; i < line.length; i++) document.execCommand("delete");
               return;
             }
-            document.execCommand("delete");
             document.execCommand("insertLineBreak");
             // A list line keeps its indent on the next line.
             if (marker) document.execCommand("insertText", false, indent + marker);

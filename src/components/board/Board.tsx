@@ -359,6 +359,9 @@ export function Board({
   const linePressedAt = useRef<{ id: number; at: Point } | null>(null);
   // What Ctrl+C copied, ready for Ctrl+V.
   const clipboard = useRef<BoardData | null>(null);
+  // The words that copy put on the system clipboard, to tell them apart from
+  // words copied outside the site.
+  const copiedWords = useRef<string | null>(null);
   const pasteFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [presetSaved, setPresetSaved] = useState(false);
   // The right-hand menu opened with "m".
@@ -1102,6 +1105,7 @@ export function Board({
         // pasting brings these back rather than that. Their words go along,
         // for pasting somewhere else.
         const words = clipboard.current.texts.map((t) => taskText(t.text)).join("\n");
+        copiedWords.current = words.trimEnd();
         navigator.clipboard?.writeText(words).catch(() => {});
         return;
       }
@@ -1153,7 +1157,11 @@ export function Board({
       pasteFallback.current = null;
       const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
       e.preventDefault();
+      // Words copied outside the site (not the board's own copy) become a
+      // new text at the cursor.
+      const words = (e.clipboardData?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n").trimEnd();
       if (file) void addPicture(file, cursorOnBoard());
+      else if (words.trim() && words !== copiedWords.current) addText(cursorOnBoard(), words);
       else if (clipboard.current) paste(clipboard.current, cursorOnBoard());
     }
 
@@ -1598,14 +1606,16 @@ export function Board({
 
   // "t": a new empty text at this spot, ready to type (like the circle menu's
   // Text, without the circle).
-  function addText(at: Point) {
+  // A new text at `at`: empty and ready to type, or holding pasted words.
+  function addText(at: Point, words = "") {
     const id = nextId.current++;
     commit();
     setTexts((ts) => [
       ...ts,
-      { id, x: at.x, y: at.y, text: "", fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false },
+      { id, x: at.x, y: at.y, text: words, fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false },
     ]);
     setSelection([]);
+    if (words) return setSelection([keyOf("text", id)]);
     editingIsNew.current = true;
     editingAppend.current = "";
     setEditing(id);

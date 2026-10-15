@@ -104,10 +104,15 @@ function styleOf(node: Node, el: HTMLElement): Omit<Run, "text"> {
 // Read the editor back into runs.
 export function domToRuns(el: HTMLElement): Run[] {
   const runs: Run[] = [];
+  const ended = () => runs.length === 0 || runs[runs.length - 1].text.endsWith("\n");
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) runs.push({ text: node.textContent ?? "", ...styleOf(node, el) });
     else if (node.nodeName === "BR") runs.push({ text: "\n" });
-    else node.childNodes.forEach(walk);
+    else if (node.nodeName === "DIV" || node.nodeName === "P") {
+      // A line the browser wrapped in its own block (some do on Enter).
+      if (!ended()) runs.push({ text: "\n" });
+      node.childNodes.forEach(walk);
+    } else node.childNodes.forEach(walk);
   };
   el.childNodes.forEach(walk);
   return mergeRuns(runs);
