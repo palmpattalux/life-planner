@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Fragment, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import {
   ATTACH_DISTANCE,
   BRACKET_CURL,
@@ -336,6 +336,10 @@ export function Board({
   // A list marker added to the end of the text when editing starts from the
   // checklist or 1.2.3. buttons.
   const editingAppend = useRef("");
+  // The left edge (board x) of the text being typed: it grows to the right
+  // from there, and keeps that left edge once it's done.
+  const editLeft = useRef(0);
+  const keepLeft = useRef<{ id: number; left: number } | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const pointer = useRef<Point | null>(null);
@@ -1601,6 +1605,7 @@ export function Board({
     setSelection([]);
     editingIsNew.current = true;
     editingAppend.current = "";
+    editLeft.current = c.x;
     setEditing(c.id);
   }
 
@@ -1618,6 +1623,7 @@ export function Board({
     if (words) return setSelection([keyOf("text", id)]);
     editingIsNew.current = true;
     editingAppend.current = "";
+    editLeft.current = at.x;
     setEditing(id);
   }
 
@@ -1720,10 +1726,25 @@ export function Board({
     if (squares.find((q) => q.id === id)?.label !== label) updateSquare(id, { label });
   }
 
+  // Once typing is done, the text (centred on its x) moves so its left edge
+  // stays where it was while typing.
+  useLayoutEffect(() => {
+    const keep = keepLeft.current;
+    if (!keep || editing !== null) return;
+    keepLeft.current = null;
+    const el = document.querySelector(`[data-text="${keep.id}"]`);
+    if (!el) return;
+    const x = keep.left + el.getBoundingClientRect().width / view.scale / 2;
+    setTexts((ts) => ts.map((t) => (t.id === keep.id && Math.abs(t.x - x) > 0.01 ? { ...t, x } : t)));
+  });
+
   function startEditing(id: number, append = "") {
     setSelection([]);
     editingIsNew.current = false;
     editingAppend.current = append;
+    const t = texts.find((x) => x.id === id);
+    const width = (document.querySelector(`[data-text="${id}"]`)?.getBoundingClientRect().width ?? 0) / view.scale;
+    editLeft.current = (t?.x ?? 0) - width / 2;
     setEditing(id);
   }
 
@@ -1786,6 +1807,7 @@ export function Board({
     if (!editingIsNew.current && changed) commit();
     if (text) {
       setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, text, runs } : t)));
+      keepLeft.current = { id, left: editLeft.current };
       // A priority task's words go to Home's Priority tasks too.
       const words = taskText(text);
       if (current?.deadline && current.link && words && changed) {
@@ -2699,8 +2721,8 @@ export function Board({
             // its menu (always on top) aren't boxed in together.
             <div
               key={t.id}
-              className="absolute flex items-center justify-center"
-              style={{ left: t.x, top: t.y, width: 0, height: 0 }}
+              className={`absolute flex items-center ${isEditing ? "justify-start" : "justify-center"}`}
+              style={{ left: isEditing ? editLeft.current : t.x, top: t.y, width: 0, height: 0 }}
             >
               <div className="relative shrink-0">
                 {isEditing ? (
