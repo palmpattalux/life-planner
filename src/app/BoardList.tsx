@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { BoardData } from "@/components/board/model";
 import { createBoard } from "./actions";
 import { BoardPreview } from "./BoardPreview";
+import { Popover } from "./home/Popover";
 import { MergeDialog } from "./MergeDialog";
 import { TornPaper } from "./TornPaper";
 
@@ -166,6 +167,8 @@ export function BoardList({
   const [mergeChoice, setMergeChoice] = useState<string | null>(null);
   const [mergeAll, setMergeAll] = useState<Project | null>(null);
   const [showTrash, setShowTrash] = useState(false);
+  // The Home board whose Remove is being confirmed, and its Remove button.
+  const [removing, setRemoving] = useState<{ p: Project; el: HTMLElement } | null>(null);
   // The space the board boxes fill.
   const areaRef = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState({ w: 0, h: 0 });
@@ -211,9 +214,13 @@ export function BoardList({
                     </Link>
                     <EyeButton hidden={false} onClick={() => setHidden(p, true)} />
                     <div
-                      className={`absolute bottom-2 right-2 gap-1 group-hover:flex ${mergeChoice === p.id ? "flex" : "hidden"}`}
+                      className={`absolute bottom-2 right-2 gap-1 group-hover:flex ${mergeChoice === p.id || removing?.p.id === p.id ? "flex" : "hidden"}`}
                     >
-                      <button onClick={() => remove(p)} className={button}>
+                      <button
+                        data-remove
+                        onClick={(e) => setRemoving({ p, el: e.currentTarget })}
+                        className={`${button} ${removing?.p.id === p.id ? "bg-stone-200" : ""}`}
+                      >
                         Remove
                       </button>
                       <button onClick={() => duplicate(p)} className={button}>
@@ -346,6 +353,9 @@ export function BoardList({
           </div>
         </div>
       )}
+      {removing && (
+        <RemoveConfirm {...removing} onClose={() => setRemoving(null)} onRemove={() => remove(removing.p)} />
+      )}
       {mergeAll && (
         <MergeDialog
           source={mergeAll}
@@ -358,6 +368,67 @@ export function BoardList({
         />
       )}
     </>
+  );
+}
+
+// Nothing on it yet.
+const isNew = (p: Project) => !p.content || Object.values(p.content).every((things) => !things?.length);
+
+// Removing a board from Home asks "Are you sure?" right by its Remove button.
+// A board with anything on it also needs its exact name typed first, so the
+// wrong one can't go by accident.
+function RemoveConfirm({
+  p,
+  el,
+  onClose,
+  onRemove,
+}: {
+  p: Project;
+  el: HTMLElement;
+  onClose: () => void;
+  onRemove: () => void;
+}) {
+  const name = p.title || UNTITLED_BOARD;
+  const needName = !isNew(p);
+  const [typed, setTyped] = useState("");
+  const ok = !needName || typed === name;
+  const go = () => {
+    if (!ok) return;
+    onClose();
+    onRemove();
+  };
+  return (
+    <Popover data-remove-confirm anchor={el} onClose={onClose} className="w-64">
+      <p className="text-sm text-stone-800">Are you sure you want to remove &ldquo;{name}&rdquo;?</p>
+      {needName && (
+        <>
+          <p className="mt-2 text-xs text-stone-500">Type the board&apos;s name to remove it.</p>
+          <input
+            data-remove-name
+            autoFocus
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && go()}
+            placeholder={name}
+            className="mt-1 w-full rounded border border-stone-300 px-2 py-1 text-sm outline-none focus:border-stone-500"
+          />
+        </>
+      )}
+      <div className="mt-2 flex justify-end gap-1">
+        <button type="button" onClick={onClose} className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100">
+          Cancel
+        </button>
+        <button
+          type="button"
+          data-confirm-remove
+          disabled={!ok}
+          onClick={go}
+          className="rounded bg-red-600 px-2 py-1 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Remove
+        </button>
+      </div>
+    </Popover>
   );
 }
 
