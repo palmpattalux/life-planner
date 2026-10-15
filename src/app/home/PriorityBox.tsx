@@ -1,11 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { PriorityPicker } from "@/components/board/PriorityPicker";
 import { TrashIcon } from "@/components/board/icons";
-import { removeLinkedBoardTexts, setLinkDone, type Task } from "@/lib/planner";
+import { createTaskPage, removeLinkedBoardTexts, setLinkDone, type Task } from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
 import { Checklist } from "./Checklist";
+import { NoteButton } from "./NoteButton";
 import { Popover } from "./Popover";
 
 const box = "rounded-2xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.08)]";
@@ -15,7 +17,8 @@ const box = "rounded-2xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.08)]";
 // right of Home (see Deadlines). Tasks made with a board timeline's
 // "Priority task" show up here with their deadline. Hovering a task shows a
 // trash icon that deletes it for good (and a priority task's board text),
-// after asking right beside the task.
+// after asking right beside the task, and an arrow that opens the task's own
+// page (a note), as on the milestone.
 export function PriorityBox({ tasks, onChange }: { tasks: Task[] | null; onChange: (tasks: Task[]) => void }) {
   const supabase = useMemo(createClient, []);
   const [focus, setFocus] = useState(0);
@@ -25,6 +28,22 @@ export function PriorityBox({ tasks, onChange }: { tasks: Task[] | null; onChang
   const [deleting, setDeleting] = useState<{ id: string; el: HTMLElement } | null>(null);
   const askingTask = asking && tasks?.find((t) => t.id === asking.id);
   const deletingTask = deleting && tasks?.find((t) => t.id === deleting.id);
+  const router = useRouter();
+  const [opening, setOpening] = useState<string | null>(null);
+
+  // A task's own page (a note), made the first time it's opened.
+  async function openPage(t: Task) {
+    if (!tasks) return;
+    if (t.page) return router.push(`/task/${t.page}`);
+    setOpening(t.id);
+    try {
+      const page = await createTaskPage(supabase, t.text);
+      onChange(tasks.map((x) => (x.id === t.id ? { ...x, page } : x)));
+      router.push(`/task/${page}`);
+    } catch {
+      setOpening(null);
+    }
+  }
 
   return (
     <section
@@ -44,19 +63,22 @@ export function PriorityBox({ tasks, onChange }: { tasks: Task[] | null; onChang
           onCheck={(t, done) => t.link && void setLinkDone(supabase, t.link, done).catch(() => {})}
           focusRequest={focus}
           arrow={(t) => (
-            <button
-              type="button"
-              data-delete-priority
-              aria-label={`Delete "${t.text}"`}
-              // On press, before the line loses focus (which hides it on a phone).
-              onPointerDown={(e) => {
-                e.preventDefault();
-                setDeleting({ id: t.id, el: e.currentTarget.closest<HTMLElement>("[data-task]")! });
-              }}
-              className="animate-pop rounded-full p-0.5 text-stone-400 hover:bg-red-50 hover:text-red-600"
-            >
-              <TrashIcon />
-            </button>
+            <>
+              <NoteButton task={t} opening={opening === t.id} onOpen={() => void openPage(t)} />
+              <button
+                type="button"
+                data-delete-priority
+                aria-label={`Delete "${t.text}"`}
+                // On press, before the line loses focus (which hides it on a phone).
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setDeleting({ id: t.id, el: e.currentTarget.closest<HTMLElement>("[data-task]")! });
+                }}
+                className="animate-pop rounded-full p-0.5 text-stone-400 hover:bg-red-50 hover:text-red-600"
+              >
+                <TrashIcon />
+              </button>
+            </>
           )}
           extra={(t) => (
             <button
