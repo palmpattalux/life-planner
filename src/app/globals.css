@@ -66,8 +66,13 @@ html[data-theme="dark"] {
   }
 }
 
-/* A glowing text on the board (the text menu's Glow). */
+/* A glowing text on the board (the text menu's Glow), or just some of its
+   words (Glow in the bar shown while words are highlighted), a little bigger. */
 .text-glow {
+  animation: glow 4s ease-in-out infinite;
+}
+.text-glow-run {
+  font-size: 1.12em;
   animation: glow 4s ease-in-out infinite;
 }
 

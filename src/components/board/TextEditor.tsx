@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { INDENT, TEXT_COLORS, TEXT_FILLS, UNCHECKED } from "./constants";
 import { ChecklistIcon } from "./icons";
-import { BULLET, domToRuns, runsToDom, setListKind, type ListKind, type Run } from "./richText";
+import { BULLET, domToRuns, runsToDom, setListKind, toggleGlow, type ListKind, type Run } from "./richText";
 
 // The editor's text from its start up to this point (line breaks as "\n").
 function textUpTo(el: HTMLElement, node: Node, offset: number): string {
@@ -112,6 +112,25 @@ export function TextEditor({
     setHighlight({ bold: document.queryCommandState("bold") });
   }
 
+  // Glow on the highlighted words (or off, if they all glow already),
+  // keeping them highlighted.
+  function glow() {
+    const el = ref.current!;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const start = textUpTo(el, range.startContainer, range.startOffset).length;
+    const end = textUpTo(el, range.endContainer, range.endOffset).length;
+    runsToDom(el, toggleGlow(domToRuns(el), start, end));
+    const a = pointAt(el, start);
+    const b = pointAt(el, end);
+    const kept = document.createRange();
+    kept.setStart(a.node, a.offset);
+    kept.setEnd(b.node, b.offset);
+    sel.removeAllRanges();
+    sel.addRange(kept);
+  }
+
   // Turn the highlighted lines into a list (or back, if they all are one),
   // keeping those lines highlighted.
   function makeList(kind: ListKind) {
@@ -156,6 +175,15 @@ export function TextEditor({
             className={`flex size-6 items-center justify-center rounded text-sm font-bold text-stone-900 ${highlight.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
           >
             B
+          </button>
+          <button
+            aria-label="Glow"
+            data-glow-words
+            onClick={glow}
+            className="rounded px-1.5 py-0.5 text-xs font-medium text-stone-900 hover:bg-stone-100"
+            style={{ textShadow: "0 0 6px rgb(250 204 21 / 0.9)" }}
+          >
+            Glow
           </button>
           {TEXT_COLORS.map((color) => (
             <button

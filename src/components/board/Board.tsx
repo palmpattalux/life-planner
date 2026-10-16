@@ -3074,6 +3074,7 @@ export function Board({
                           {sliceRuns(lineRuns, restFrom).map((r, j) => (
                             <span
                               key={j}
+                              className={r.glow ? "text-glow-run" : undefined}
                               style={{
                                 fontSize: r.scale ? `${r.scale}em` : undefined,
                                 fontWeight: r.bold === undefined ? undefined : r.bold ? 700 : 400,

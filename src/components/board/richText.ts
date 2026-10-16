@@ -10,13 +10,15 @@ export type Run = {
   bold?: boolean; // left out: as bold as the whole text
   color?: string; // left out: the whole text's colour
   bg?: string; // background fill; left out: the whole text's (usually none)
+  glow?: boolean; // a little bigger with a soft, slow glow (see .text-glow-run)
 };
 
 function sameStyle(a: Run, b: Run) {
-  return a.scale === b.scale && a.bold === b.bold && a.color === b.color && a.bg === b.bg;
+  return a.scale === b.scale && a.bold === b.bold && a.color === b.color && a.bg === b.bg && a.glow === b.glow;
 }
 
-const plain = (r: Run) => r.scale === undefined && r.bold === undefined && r.color === undefined && r.bg === undefined;
+const plain = (r: Run) =>
+  r.scale === undefined && r.bold === undefined && r.color === undefined && r.bg === undefined && !r.glow;
 
 export function isPlain(runs: Run[]) {
   return runs.every(plain);
@@ -68,6 +70,10 @@ export function runsToDom(el: HTMLElement, runs: Run[]) {
     if (r.bold !== undefined) target.style.fontWeight = r.bold ? "700" : "400";
     if (r.color !== undefined) target.style.color = r.color;
     if (r.bg !== undefined) target.style.backgroundColor = r.bg;
+    if (r.glow) {
+      target.dataset.glow = "";
+      target.className = "text-glow-run";
+    }
     r.text.split("\n").forEach((part, i) => {
       if (i > 0) target.appendChild(document.createElement("br"));
       if (part) target.appendChild(document.createTextNode(part));
@@ -88,7 +94,9 @@ function styleOf(node: Node, el: HTMLElement): Omit<Run, "text"> {
   let bold: boolean | undefined;
   let color: string | undefined;
   let bg: string | undefined;
+  let glow: true | undefined;
   for (let n = node.parentElement; n && n !== el; n = n.parentElement) {
+    if (n.dataset.glow !== undefined) glow = true;
     if (bold === undefined) {
       const w = n.style.fontWeight;
       if (w) bold = w === "bold" || Number(w) >= 600;
@@ -98,7 +106,7 @@ function styleOf(node: Node, el: HTMLElement): Omit<Run, "text"> {
     if (bg === undefined && n.style.backgroundColor) bg = n.style.backgroundColor;
   }
   const scale = Math.round(scaleOf(node, el) * 1000) / 1000;
-  return { scale: scale === 1 ? undefined : scale, bold, color, bg: bg === "transparent" ? undefined : bg };
+  return { scale: scale === 1 ? undefined : scale, bold, color, bg: bg === "transparent" ? undefined : bg, glow };
 }
 
 // Read the editor back into runs.
@@ -116,6 +124,13 @@ export function domToRuns(el: HTMLElement): Run[] {
   };
   el.childNodes.forEach(walk);
   return mergeRuns(runs);
+}
+
+// Characters `from` to `to` glow, or stop glowing if they all already do.
+export function toggleGlow(runs: Run[], from: number, to: number): Run[] {
+  const picked = sliceRuns(runs, from, to);
+  const glow = picked.every((r) => r.glow) ? undefined : true;
+  return mergeRuns([...sliceRuns(runs, 0, from), ...picked.map((r) => ({ ...r, glow })), ...sliceRuns(runs, to)]);
 }
 
 // List markers a text line can start with (after its indent).
