@@ -446,6 +446,14 @@ export function Board({
     return { id: q.id, at: near.p, rim: { x: (near.p.x - q.x) / q.w, y: (near.p.y - q.y) / q.h } };
   }
 
+  // While drawing a line: an end near a square's outline (and not on a
+  // circle or text) latches onto it straight away, like dragging an end there.
+  function latchToSquare(p: Point): Point {
+    const data = boardRef.current;
+    if (itemAt(p, data)) return p;
+    return squareRimAt(p, data, ATTACH_DISTANCE / viewRef.current.scale)?.at ?? p;
+  }
+
   const pointsOf = (l: Line): Point[] => [l.from, ...(l.bends ?? []), l.to];
 
   // For drawing: an end attached to a circle or text stops at its edge, so an
@@ -1162,7 +1170,7 @@ export function Board({
       } else if (key === keys.picture) {
         pickPictures(cursorOnBoard());
       } else if (key === keys.line && !draftRef.current) {
-        const at = cursorOnBoard();
+        const at = latchToSquare(cursorOnBoard());
         setDraft({ from: at, to: at });
       }
     }
@@ -1216,7 +1224,7 @@ export function Board({
     if (rootRef.current) rootRef.current.style.cursor = inBox ? "grab" : "";
     if (draftRef.current) {
       const to = toBoard(e.clientX, e.clientY);
-      setDraft((dr) => (dr ? { ...dr, to: straighten(to, dr.from) } : dr));
+      setDraft((dr) => (dr ? { ...dr, to: latchToSquare(straighten(to, dr.from)) } : dr));
     }
     if (marquee) {
       setMarquee({ ...marquee, x2: e.clientX, y2: e.clientY });
@@ -1533,7 +1541,7 @@ export function Board({
     if (lineMode && !(e.target as HTMLElement).closest("button, input, [contenteditable]")) {
       e.stopPropagation();
       rootRef.current!.setPointerCapture(e.pointerId);
-      const at = toBoard(e.clientX, e.clientY);
+      const at = latchToSquare(toBoard(e.clientX, e.clientY));
       setDraft({ from: at, to: at });
     }
   }

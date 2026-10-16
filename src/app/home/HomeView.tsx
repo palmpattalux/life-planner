@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { daysUntil, loadPhase, loadPriority, savePhase, savePriority, type Phase, type Task } from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
-import { BoardList, useBoards } from "../BoardList";
+import { BoardList, useBoards, type Project } from "../BoardList";
 import { AccountMenu } from "./AccountMenu";
 import { PhaseBox } from "./PhaseBox";
 import { Deadlines, PriorityBox } from "./PriorityBox";
@@ -40,6 +40,19 @@ export function HomeView({ email }: { email?: string }) {
     (tasks) => savePriority(supabase, tasks),
   );
   const left = countdown(phase.value);
+
+  // For each board: its priority tasks and the texts linked to milestone
+  // tasks, counting only the ones not done yet.
+  function attention(p: Project) {
+    const open = (tasks: Task[] | undefined) => new Set(tasks?.filter((t) => !t.done && t.link).map((t) => t.link));
+    const priorityOpen = open(priority.value ?? undefined);
+    const milestoneOpen = open(phase.value?.tasks);
+    const texts = p.content?.texts ?? [];
+    return {
+      priority: texts.filter((t) => t.deadline && t.link && priorityOpen.has(t.link)).length,
+      milestone: texts.filter((t) => t.link && milestoneOpen.has(t.link)).length,
+    };
+  }
 
   return (
     <main className="flex min-h-dvh flex-col xl:h-dvh">
@@ -80,7 +93,7 @@ export function HomeView({ email }: { email?: string }) {
               </p>
             )}
             <div data-home-boards className="flex w-full max-w-3xl flex-col pt-3">
-              <BoardList boards={boards} home />
+              <BoardList boards={boards} home attention={attention} />
             </div>
           </div>
         </div>

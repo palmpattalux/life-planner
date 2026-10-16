@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TRASH_DAYS, UNTITLED_BOARD } from "@/lib/pages";
 import { createClient } from "@/lib/supabase/client";
 import type { BoardData } from "@/components/board/model";
+import { ClockIcon, MilestoneIcon } from "@/components/board/icons";
 import { createBoard } from "./actions";
 import { BoardPreview } from "./BoardPreview";
 import { Popover } from "./home/Popover";
@@ -149,11 +150,14 @@ export function BoardList({
   currentId,
   onOpenCurrent,
   home = false,
+  attention,
 }: {
   boards: Boards;
   currentId?: string;
   onOpenCurrent?: () => void;
   home?: boolean;
+  // On Home: how many unfinished priority tasks and linked milestone tasks a board holds.
+  attention?: (p: Project) => { priority: number; milestone: number };
 }) {
   const { projects, live: all, trash, remove, duplicate, setHidden } = boards;
   // On Home, hidden boards leave the main list for the section under the eye button.
@@ -213,6 +217,7 @@ export function BoardList({
                       <TornPaper seed={p.id}>{p.title || UNTITLED_BOARD}</TornPaper>
                     </Link>
                     <EyeButton hidden={false} onClick={() => setHidden(p, true)} />
+                    {attention && <AttentionBadges {...attention(p)} />}
                     <div
                       className={`absolute bottom-2 right-2 gap-1 group-hover:flex ${mergeChoice === p.id || removing?.p.id === p.id ? "flex" : "hidden"}`}
                     >
@@ -368,6 +373,32 @@ export function BoardList({
         />
       )}
     </>
+  );
+}
+
+// In a Home board's bottom left corner: a red clock with the number of
+// priority tasks on the board and a flagged stone with the number of linked
+// milestone tasks, slowly fading in and out to draw the eye there.
+function AttentionBadges({ priority, milestone }: { priority: number; milestone: number }) {
+  if (!priority && !milestone) return null;
+  return (
+    <div
+      data-attention
+      className="pointer-events-none absolute bottom-2 left-2 flex animate-breathe items-center gap-2 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold shadow-sm"
+    >
+      {priority > 0 && (
+        <span data-attention-priority className="flex items-center gap-1 text-red-600">
+          <ClockIcon />
+          {priority}
+        </span>
+      )}
+      {milestone > 0 && (
+        <span data-attention-milestone className="flex items-center gap-1 text-stone-600">
+          <MilestoneIcon />
+          {milestone}
+        </span>
+      )}
+    </div>
   );
 }
 

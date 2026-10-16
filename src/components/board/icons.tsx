@@ -80,6 +80,22 @@ export function ClockIcon() {
   );
 }
 
+// A stone with a little flag on top: a milestone.
+export function MilestoneIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <path
+        d="M2.5 14.5 C2.5 11.6 4.6 10 8 10 C11.4 10 13.5 11.6 13.5 14.5 Z"
+        fill="#a8a29e"
+        stroke="#78716c"
+        strokeWidth="1"
+      />
+      <path d="M8 10 V1.8" stroke="#57534e" strokeWidth="1.3" />
+      <path d="M8 2 L12.5 3.6 L8 5.2 Z" fill="#57534e" stroke="#57534e" strokeWidth="0.8" />
+    </svg>
+  );
+}
+
 export function PinIcon() {
   return (
     <svg
