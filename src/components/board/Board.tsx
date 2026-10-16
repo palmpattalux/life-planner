@@ -1002,6 +1002,24 @@ export function Board({
     setSelection([keyOf("picture", id)]);
   }
 
+  // Several pictures at once (dropped or picked from files), each a little
+  // further down and to the right than the one before, starting at `at`.
+  function addPictures(files: Iterable<File>, at: Point) {
+    const step = 40 / viewRef.current.scale;
+    [...files]
+      .filter((f) => f.type.startsWith("image/"))
+      .forEach((f, i) => void addPicture(f, { x: at.x + i * step, y: at.y + i * step }));
+  }
+
+  // The picture shortcut (or the phone toolbar's Image) opens the file picker;
+  // what's picked goes where the cursor was.
+  const fileInput = useRef<HTMLInputElement>(null);
+  const pickAt = useRef<Point | null>(null);
+  function pickPictures(at: Point) {
+    pickAt.current = at;
+    fileInput.current?.click();
+  }
+
   // "b" (or the phone toolbar's Circle): a new circle here, selected straight
   // away so its menu shows.
   function addCircle(at: Point) {
@@ -1141,6 +1159,8 @@ export function Board({
         addText(cursorOnBoard());
       } else if (key === keys.circle) {
         addCircle(cursorOnBoard());
+      } else if (key === keys.picture) {
+        pickPictures(cursorOnBoard());
       } else if (key === keys.line && !draftRef.current) {
         const at = cursorOnBoard();
         setDraft({ from: at, to: at });
@@ -2340,7 +2360,30 @@ export function Board({
       onPointerMoveCapture={onTouchMove}
       onPointerUpCapture={onTouchUp}
       onPointerCancelCapture={onTouchUp}
+      // Pictures dragged in from the computer go where they're dropped.
+      onDragOver={(e) => {
+        if (viewing || !e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(e) => {
+        if (viewing || !e.dataTransfer.files.length) return;
+        e.preventDefault();
+        addPictures(e.dataTransfer.files, toBoard(e.clientX, e.clientY));
+      }}
     >
+      <input
+        ref={fileInput}
+        data-picture-input
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          if (e.target.files) addPictures(e.target.files, pickAt.current ?? screenCentre());
+          e.target.value = "";
+        }}
+      />
       <div
         className="absolute left-0 top-0 origin-top-left"
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
@@ -3336,6 +3379,7 @@ export function Board({
                 ["Circle", () => addCircle(screenCentre()), false, false],
                 ["Line", () => setLineMode((m) => !m), lineMode, false],
                 ["Text", () => addText(screenCentre()), false, false],
+                ["Image", () => pickPictures(screenCentre()), false, false],
                 ["Undo", undo, false, false],
                 ["Redo", redo, false, false],
                 ["Delete", deleteSelection, false, selection.length === 0],
@@ -3348,7 +3392,7 @@ export function Board({
                 onClick={onClick}
                 disabled={disabled}
                 aria-pressed={on}
-                className={`flex w-12 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-medium disabled:text-stone-300 ${on ? "bg-stone-900 text-white" : "active:bg-stone-100"}`}
+                className={`flex w-11 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-medium disabled:text-stone-300 ${on ? "bg-stone-900 text-white" : "active:bg-stone-100"}`}
               >
                 <ToolIcon tool={label} />
                 {label}

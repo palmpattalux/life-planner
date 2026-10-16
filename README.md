@@ -31,7 +31,7 @@ Opening the app goes straight to the board you opened last, with an **Open?** bo
 - Clicking a line shows thickness choices in its menu; selecting only lines shows them beside the selection box, for all of them at once.
 - Press **m** to open the menu on the right (press **m** again to close it). Its **Preset** button drops down every saved preset with **Use** (places a copy in the middle of the screen), **Edit** (places it, and the top right button becomes **Update preset**: select what the preset should be and press it to save over the old one) and **Delete**.
 - Click something (or select several) and press **Ctrl+C** (Cmd+C) to copy, then **Ctrl+V** (Cmd+V) to paste a copy at the cursor.
-- A picture copied from outside the site (for example **Copy image** in a browser) pastes onto the board with **Ctrl+V** (Cmd+V). Drag it to move it; scroll or pinch while it's selected to resize it.
+- A picture copied from outside the site (for example **Copy image** in a browser) pastes onto the board with **Ctrl+V** (Cmd+V). You can also drag picture files from your computer onto the board, or press **i** (or the phone toolbar's **Image**) to pick pictures from your files; several at once land in a little stack. Drag it to move it; scroll or pinch while it's selected to resize it.
 - A text dragged above or below a line snaps centred on the line's middle (pink guide).
 - Something that overlaps something else shows **Layer** in its box: **Move to front** / **Move to back**.
 - Drop a line end near a circle or text and it attaches: moving the circle or text moves that end. Drag the end away to detach it.

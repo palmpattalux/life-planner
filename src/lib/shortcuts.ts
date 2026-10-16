@@ -1,10 +1,18 @@
 // The board's one-key shortcuts, changeable in Home's menu (Shortcuts) and
 // kept in this browser.
 
-export type Action = "text" | "view" | "circle" | "line" | "presets" | "centre";
+export type Action = "text" | "view" | "circle" | "line" | "presets" | "centre" | "picture";
 export type Shortcuts = Record<Action, string>;
 
-export const DEFAULT_SHORTCUTS: Shortcuts = { text: "t", view: "v", circle: "b", line: "n", presets: "m", centre: "f" };
+export const DEFAULT_SHORTCUTS: Shortcuts = {
+  text: "t",
+  view: "v",
+  circle: "b",
+  line: "n",
+  presets: "m",
+  centre: "f",
+  picture: "i",
+};
 
 // In the order Home's menu lists them.
 export const ACTIONS: { action: Action; label: string }[] = [
@@ -14,6 +22,7 @@ export const ACTIONS: { action: Action; label: string }[] = [
   { action: "line", label: "Draw a line (hold)" },
   { action: "presets", label: "Presets menu" },
   { action: "centre", label: "Centre the view" },
+  { action: "picture", label: "Add a picture" },
 ];
 
 const KEY = "shortcuts";
