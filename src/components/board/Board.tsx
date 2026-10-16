@@ -2789,7 +2789,22 @@ export function Board({
                 ) : (
                   <div
                     data-text={t.id}
-                    onPointerDown={(e) => startDrag(e, "text", t.id)}
+                    onPointerDown={(e) => {
+                      // Right-click (or a two-finger tap on a touchpad) opens
+                      // just this text's menu, by the mouse.
+                      if (e.button === 2) {
+                        e.stopPropagation();
+                        setPinMenu(null);
+                        setSelection([keyOf("text", t.id)]);
+                        return;
+                      }
+                      startDrag(e, "text", t.id);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSelection([keyOf("text", t.id)]);
+                    }}
                     onDoubleClick={() => startEditing(t.id)}
                     className="relative cursor-grab whitespace-pre px-1 active:cursor-grabbing"
                     style={{
@@ -2804,7 +2819,6 @@ export function Board({
                       const line = full.slice(indent.length);
                       const box = line[0] === UNCHECKED || line[0] === CHECKED;
                       const boxRun = sliceRuns(lineRuns, indent.length, indent.length + 1)[0];
-                      const boxColor = boxRun?.color ?? t.color;
                       const restFrom = indent.length + (box ? (line[1] === " " ? 2 : 1) : 0);
                       return (
                         <Fragment key={i}>
@@ -2822,11 +2836,11 @@ export function Board({
                                   width: "0.85em",
                                   height: "0.85em",
                                   marginRight: "0.3em",
-                                  // A priority task's box (and tick) is white.
-                                  border: `0.09em solid ${t.deadline ? "#fff" : boxColor}`,
+                                  // Checklist boxes (and ticks) are always white.
+                                  border: "0.09em solid #fff",
                                 }}
                               >
-                                {line[0] === CHECKED && <CheckMark color={t.deadline ? "#fff" : boxColor} />}
+                                {line[0] === CHECKED && <CheckMark color="#fff" />}
                               </span>
                             </span>
                           )}
