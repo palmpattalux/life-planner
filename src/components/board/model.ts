@@ -32,6 +32,9 @@ export type Text = {
   color: string;
   bold: boolean;
   bg?: string; // background fill; left out: none
+  // Glow: drawn a little bigger, with a soft glow in its own colour that
+  // slowly brightens and fades, so it stands out from the rest.
+  glow?: boolean;
   // Parts with their own size, boldness or colour. Left out when the whole
   // text looks the same; otherwise the runs' text joined is `text`.
   runs?: Run[];

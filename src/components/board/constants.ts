@@ -11,6 +11,8 @@ export const PICTURE_SIZE = 480;
 export const MAX_PICTURE = 6000;
 // Above everything on the board (menus, handles, guides), whatever the layers.
 export const TOP_LAYER = 1_000_000;
+// How much bigger a glowing text is drawn.
+export const GLOW_GROW = 1.12;
 export const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
 export const INK = "#1c1917";
 // The one standard thickness for everything drawn with a line (lines,

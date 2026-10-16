@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import {
   ATTACH_DISTANCE,
+  GLOW_GROW,
   BRACKET_CURL,
   BOARD_H,
   BOARD_OVERSCROLL,
@@ -2987,7 +2988,7 @@ export function Board({
           const showMenu = single === keyOf("text", t.id);
           const inGroup = selection.length > 1 && selection.includes(keyOf("text", t.id));
           const style = {
-            fontSize: t.fontSize,
+            fontSize: t.fontSize * (t.glow ? GLOW_GROW : 1),
             color: t.color,
             fontWeight: t.bold ? 700 : 400,
             lineHeight: 1.2,
@@ -3003,7 +3004,7 @@ export function Board({
             >
               <div className="relative shrink-0">
                 {isEditing ? (
-                  <div className="relative" style={{ zIndex: TOP_LAYER }}>
+                  <div className={`relative ${t.glow ? "text-glow" : ""}`} style={{ zIndex: TOP_LAYER }}>
                     <TextEditor
                       initial={t.text + editingAppend.current}
                       initialRuns={[...(t.runs ?? [{ text: t.text }]), { text: editingAppend.current }]}
@@ -3032,7 +3033,7 @@ export function Board({
                       setSelection([keyOf("text", t.id)]);
                     }}
                     onDoubleClick={() => startEditing(t.id)}
-                    className="relative cursor-grab whitespace-pre px-1 active:cursor-grabbing"
+                    className={`relative cursor-grab whitespace-pre px-1 active:cursor-grabbing ${t.glow ? "text-glow" : ""}`}
                     style={{
                       ...style,
                       zIndex: layerOf.get(keyOf("text", t.id)),
@@ -3148,6 +3149,14 @@ export function Board({
                       className={`rounded px-2 py-1 text-left text-sm font-bold ${t.bold ? "bg-stone-200" : "hover:bg-stone-100"}`}
                     >
                       Bold
+                    </button>
+                    <button
+                      data-glow-button
+                      onClick={() => updateText(t.id, { glow: t.glow ? undefined : true })}
+                      className={`rounded px-2 py-1 text-left text-sm font-medium ${t.glow ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                      style={{ textShadow: "0 0 6px rgb(250 204 21 / 0.9)" }}
+                    >
+                      Glow
                     </button>
                     {/* Background fill for the whole text (none to start with). */}
                     <button
