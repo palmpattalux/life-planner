@@ -2421,6 +2421,16 @@ export function Board({
                 Priority task
               </button>
             )}
+            {selectedLine.bracket && (
+              // A phase's bracket can face the other way.
+              <button
+                data-reverse-bracket
+                onClick={() => updateLine(selectedLine.id, { bracket: selectedLine.bracket === 1 ? -1 : 1 })}
+                className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+              >
+                Reverse
+              </button>
+            )}
             <div className="flex gap-1.5 px-2 py-1.5">
               {TEXT_COLORS.map((color) => (
                 <button
