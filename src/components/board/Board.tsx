@@ -2378,7 +2378,8 @@ export function Board({
   function timelineMenu() {
     if (!selectedLine || phase) return null;
     const { labels } = timelineGeometry(selectedLine);
-    if (labels.length < 2) return null;
+    // (A phase always has a menu, for Reverse, even if it's one step long.)
+    if (labels.length < 2 && !selectedLine.bracket) return null;
     // A phase made between smaller steps only has its colours.
     const ends = selectedLine.time?.startSub !== undefined;
     return (
@@ -2397,6 +2398,16 @@ export function Board({
           />
         ) : (
           <>
+            {selectedLine.bracket && (
+              // A phase's bracket can face the other way.
+              <button
+                data-reverse-bracket
+                onClick={() => updateLine(selectedLine.id, { bracket: selectedLine.bracket === 1 ? -1 : 1 })}
+                className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+              >
+                Reverse
+              </button>
+            )}
             {!ends && (
               <button
                 onClick={() => {
@@ -2419,16 +2430,6 @@ export function Board({
               >
                 <ClockIcon />
                 Priority task
-              </button>
-            )}
-            {selectedLine.bracket && (
-              // A phase's bracket can face the other way.
-              <button
-                data-reverse-bracket
-                onClick={() => updateLine(selectedLine.id, { bracket: selectedLine.bracket === 1 ? -1 : 1 })}
-                className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
-              >
-                Reverse
               </button>
             )}
             <div className="flex gap-1.5 px-2 py-1.5">
