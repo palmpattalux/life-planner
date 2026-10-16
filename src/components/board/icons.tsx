@@ -80,6 +80,25 @@ export function ClockIcon() {
   );
 }
 
+// Two overlapping corners: cropping a picture.
+export function CropIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4.5 1.5 V11.5 H14.5" />
+      <path d="M1.5 4.5 H11.5 V14.5" />
+    </svg>
+  );
+}
+
 // A stone with a little flag on top: a milestone.
 export function MilestoneIcon() {
   return (

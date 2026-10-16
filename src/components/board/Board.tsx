@@ -73,6 +73,7 @@ import {
   CheckMark,
   ChecklistIcon,
   ClockIcon,
+  CropIcon,
   LayerButton,
   LineWidths,
   LinkButton,
@@ -105,6 +106,8 @@ import {
   type Preset,
   type Square,
   type Text,
+  fullSize,
+  type Crop,
 } from "./model";
 import { BULLET, isPlain, mergeRuns, runLines, setListKind, sliceRuns, type ListKind, type Run } from "./richText";
 import { SIDE_MENU_W, SideMenu } from "./SideMenu";
@@ -292,6 +295,13 @@ export function Board({
   }, []);
   // The angle point clicked on the selected line; Backspace / Delete removes it.
   const [selectedBend, setSelectedBend] = useState<{ lineId: number; index: number } | null>(null);
+  // The picture being cropped: the whole picture's box on the board (which
+  // stays put while cropping) and how much is cut off each side so far.
+  const [cropping, setCropping] = useState<{
+    id: number;
+    full: { x: number; y: number; w: number; h: number };
+    crop: Crop;
+  } | null>(null);
   const selectedBendRef = useRef(selectedBend);
   selectedBendRef.current = selectedBend;
   // Alignment lines shown while a square snaps to other squares.
@@ -1459,6 +1469,95 @@ export function Board({
 
   // Pressing on empty board starts a selection box (or, inside the box
   // around several selected things, drags them).
+  // Crop (the picture menu's button, or double-clicking a picture): the
+  // whole picture shows faded with the part that's kept outlined; drag its
+  // sides or corners to crop.
+  function startCrop(id: number) {
+    const p = pictures.find((x) => x.id === id);
+    if (!p) return;
+    const c = p.crop ?? { l: 0, t: 0, r: 0, b: 0 };
+    const f = fullSize(p);
+    setSelection([]);
+    setCropping({ id, full: { x: p.x - p.w / 2 - c.l * f.w, y: p.y - p.h / 2 - c.t * f.h, ...f }, crop: c });
+  }
+
+  // Done cropping: the picture becomes just the part that's kept (or, with
+  // `cancel`, stays as it was).
+  function finishCrop(cancel = false) {
+    const cr = croppingRef.current;
+    if (!cr) return;
+    setCropping(null);
+    const p = pictures.find((x) => x.id === cr.id);
+    if (!p || cancel) return;
+    const { full: f, crop: c } = cr;
+    const old = p.crop ?? { l: 0, t: 0, r: 0, b: 0 };
+    if (c.l === old.l && c.t === old.t && c.r === old.r && c.b === old.b) {
+      setSelection([keyOf("picture", p.id)]);
+      return;
+    }
+    const kw = 1 - c.l - c.r;
+    const kh = 1 - c.t - c.b;
+    commit();
+    setPictures((ps) =>
+      ps.map((x) =>
+        x.id === p.id
+          ? {
+              ...x,
+              x: f.x + f.w * (c.l + kw / 2),
+              y: f.y + f.h * (c.t + kh / 2),
+              w: f.w * kw,
+              h: f.h * kh,
+              crop: c.l || c.t || c.r || c.b ? c : undefined,
+            }
+          : x,
+      ),
+    );
+    setSelection([keyOf("picture", p.id)]);
+  }
+  const croppingRef = useRef(cropping);
+  croppingRef.current = cropping;
+  const finishCropRef = useRef(finishCrop);
+  finishCropRef.current = finishCrop;
+
+  // While cropping: Enter finishes, Escape cancels, other keys do nothing,
+  // and clicking anywhere but the picture finishes.
+  useEffect(() => {
+    if (!cropping) return;
+    function onKey(e: KeyboardEvent) {
+      e.stopPropagation();
+      if (e.key === "Enter") finishCropRef.current();
+      else if (e.key === "Escape") finishCropRef.current(true);
+    }
+    function onDown(e: PointerEvent) {
+      if (!(e.target as HTMLElement).closest?.("[data-crop]")) finishCropRef.current();
+    }
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [!!cropping]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dragging one of the crop box's sides or corners.
+  function dragCrop(e: React.PointerEvent, sides: string) {
+    const cr = croppingRef.current;
+    if (!cr || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    e.stopPropagation();
+    const { full: f, crop: c } = cr;
+    const at = toBoard(e.clientX, e.clientY);
+    const fx = (at.x - f.x) / f.w;
+    const fy = (at.y - f.y) / f.h;
+    // The kept part stays at least this big (as part of the picture).
+    const MIN = 0.05;
+    const next = { ...c };
+    if (sides.includes("l")) next.l = clamp(fx, 0, 1 - c.r - MIN);
+    if (sides.includes("r")) next.r = clamp(1 - fx, 0, 1 - c.l - MIN);
+    if (sides.includes("t")) next.t = clamp(fy, 0, 1 - c.b - MIN);
+    if (sides.includes("b")) next.b = clamp(1 - fy, 0, 1 - c.t - MIN);
+    setCropping({ ...cr, crop: next });
+  }
+
   function onBoardPointerDown(e: React.PointerEvent) {
     // View mode: nothing to select (and the view mode switch stays clickable).
     if (viewingRef.current) return;
@@ -2019,6 +2118,8 @@ export function Board({
     const spacing = n > 1 ? len / (n - 1) : len;
     const labelEvery = Math.max(1, Math.ceil(TICK_LABEL_GAP / spacing));
     const tickEvery = Math.max(1, Math.ceil(3 / spacing));
+    // The marks get thicker (or thinner) along with the timeline itself.
+    const thick = (l.width ?? LINE_WIDTH) / LINE_WIDTH;
     const main = labels.map((text, i) => {
       const isEnd = i === 0 || i === n - 1;
       const pin = l.pins?.find((p) => p.value === tickValue(l.time!, i));
@@ -2081,7 +2182,7 @@ export function Board({
             x2={p.x + nx * size}
             y2={p.y + ny * size}
             stroke={pin?.color ?? l.color ?? INK}
-            strokeWidth={(labelled ? 1.5 : 1) * grow}
+            strokeWidth={(labelled ? 1.5 : 1) * grow * thick}
           />
           {labelled && (
             <text
@@ -2117,7 +2218,7 @@ export function Board({
             x2={p.x + nx * TICK * 0.6}
             y2={p.y + ny * TICK * 0.6}
             stroke={l.color ?? INK}
-            strokeWidth={1}
+            strokeWidth={thick}
           />
           <text
             x={p.x + nx * (TICK * 0.6 + fontSize)}
@@ -2668,28 +2769,142 @@ export function Board({
           );
         })}
 
-        {pictures.map((p) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={p.id}
-            data-picture={p.id}
-            src={p.src}
-            alt=""
-            draggable={false}
-            onPointerDown={(e) => startDrag(e, "picture", p.id)}
-            className="absolute max-w-none cursor-grab select-none active:cursor-grabbing"
-            style={{
-              zIndex: layerOf.get(keyOf("picture", p.id)),
-              left: p.x - p.w / 2,
-              top: p.y - p.h / 2,
-              width: p.w,
-              height: p.h,
-              outline: selection.includes(keyOf("picture", p.id))
-                ? `${px(selection.length > 1 ? 3 : 2)}px solid rgb(59 130 246 / ${selection.length > 1 ? 0.35 : 0.8})`
-                : undefined,
-            }}
-          />
-        ))}
+        {pictures.map((p) => {
+          if (cropping?.id === p.id) return null;
+          // Only the part that's not cropped off shows.
+          const f = fullSize(p);
+          return (
+            <div
+              key={p.id}
+              data-picture={p.id}
+              onPointerDown={(e) => startDrag(e, "picture", p.id)}
+              onDoubleClick={() => startCrop(p.id)}
+              className="absolute cursor-grab select-none overflow-hidden active:cursor-grabbing"
+              style={{
+                zIndex: layerOf.get(keyOf("picture", p.id)),
+                left: p.x - p.w / 2,
+                top: p.y - p.h / 2,
+                width: p.w,
+                height: p.h,
+                outline: selection.includes(keyOf("picture", p.id))
+                  ? `${px(selection.length > 1 ? 3 : 2)}px solid rgb(59 130 246 / ${selection.length > 1 ? 0.35 : 0.8})`
+                  : undefined,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={p.src}
+                alt=""
+                draggable={false}
+                className="pointer-events-none absolute max-w-none"
+                style={{ left: -(p.crop?.l ?? 0) * f.w, top: -(p.crop?.t ?? 0) * f.h, width: f.w, height: f.h }}
+              />
+            </div>
+          );
+        })}
+
+        {cropping &&
+          (() => {
+            const p = pictures.find((x) => x.id === cropping.id);
+            if (!p) return null;
+            const { full: f, crop: c } = cropping;
+            const box = { x: c.l * f.w, y: c.t * f.h, w: f.w * (1 - c.l - c.r), h: f.h * (1 - c.t - c.b) };
+            const handle = px(12);
+            const spots: [string, number, number][] = [
+              ["lt", 0, 0],
+              ["t", 0.5, 0],
+              ["rt", 1, 0],
+              ["r", 1, 0.5],
+              ["rb", 1, 1],
+              ["b", 0.5, 1],
+              ["lb", 0, 1],
+              ["l", 0, 0.5],
+            ];
+            const cursor: Record<string, string> = {
+              lt: "nwse-resize",
+              rb: "nwse-resize",
+              rt: "nesw-resize",
+              lb: "nesw-resize",
+              t: "ns-resize",
+              b: "ns-resize",
+              l: "ew-resize",
+              r: "ew-resize",
+            };
+            return (
+              <div
+                data-crop={p.id}
+                className="absolute select-none"
+                style={{ zIndex: TOP_LAYER, left: f.x, top: f.y, width: f.w, height: f.h }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {/* The whole picture, faded; the kept part on top, clear. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.src}
+                  alt=""
+                  draggable={false}
+                  className="pointer-events-none absolute inset-0 size-full max-w-none opacity-35"
+                />
+                <div
+                  data-crop-box
+                  className="absolute overflow-hidden"
+                  style={{
+                    left: box.x,
+                    top: box.y,
+                    width: box.w,
+                    height: box.h,
+                    outline: `${px(2)}px solid #fff`,
+                    boxShadow: `0 0 0 ${px(3)}px rgb(0 0 0 / 0.25)`,
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.src}
+                    alt=""
+                    draggable={false}
+                    className="pointer-events-none absolute max-w-none"
+                    style={{ left: -box.x, top: -box.y, width: f.w, height: f.h }}
+                  />
+                </div>
+                {spots.map(([sides, sx, sy]) => (
+                  <div
+                    key={sides}
+                    data-crop-handle={sides}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    }}
+                    onPointerMove={(e) => dragCrop(e, sides)}
+                    className="absolute rounded-sm bg-white"
+                    style={{
+                      left: box.x + box.w * sx - handle / 2,
+                      top: box.y + box.h * sy - handle / 2,
+                      width: handle,
+                      height: handle,
+                      boxShadow: `0 0 0 ${px(1)}px rgb(0 0 0 / 0.4)`,
+                      cursor: cursor[sides],
+                    }}
+                  />
+                ))}
+                {/* Done, just under the kept part. */}
+                <button
+                  data-crop-done
+                  onClick={() => finishCrop()}
+                  className="absolute rounded-md bg-stone-900 font-medium text-white shadow"
+                  style={{
+                    left: box.x + box.w / 2,
+                    top: box.y + box.h + px(14),
+                    transform: `translateX(-50%) scale(${px(1)})`,
+                    transformOrigin: "top center",
+                    padding: "4px 12px",
+                    fontSize: 13,
+                  }}
+                >
+                  Done
+                </button>
+              </div>
+            );
+          })()}
 
         {/* Guide lines while a square snaps, drawn above the squares and a
             little past them. */}
@@ -2970,8 +3185,8 @@ export function Board({
         {single?.startsWith("picture:") &&
           (() => {
             const p = pictures.find((x) => x.id === singleId);
-            const layer = p && layerButton(keyOf("picture", p.id));
-            if (!p || !layer) return null;
+            if (!p) return null;
+            const layer = layerButton(keyOf("picture", p.id));
             return (
               <Popup
                 key={p.id}
@@ -2981,6 +3196,14 @@ export function Board({
                 view={view}
                 className="min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
               >
+                <button
+                  data-crop-button
+                  onClick={() => startCrop(p.id)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100"
+                >
+                  <CropIcon />
+                  Crop
+                </button>
                 {layer}
               </Popup>
             );

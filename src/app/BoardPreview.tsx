@@ -1,4 +1,4 @@
-import { fullBoard, type BoardData } from "@/components/board/model";
+import { fullBoard, fullSize, type BoardData } from "@/components/board/model";
 import { INK, LINE_WIDTH } from "@/components/board/constants";
 
 // A small, slightly blurred picture of what's on a board, for its box on
@@ -41,9 +41,22 @@ export function BoardPreview({ data }: { data: BoardData | null }) {
       className="absolute inset-0 size-full px-4 pb-10 pt-4 opacity-70 blur-[1.5px]"
       aria-hidden
     >
-      {d.pictures.map((p) => (
-        <image key={`p${p.id}`} href={p.src} x={p.x - p.w / 2} y={p.y - p.h / 2} width={p.w} height={p.h} />
-      ))}
+      {d.pictures.map((p) => {
+        // Only the part that's not cropped off.
+        const f = fullSize(p);
+        return (
+          <svg
+            key={`p${p.id}`}
+            x={p.x - p.w / 2}
+            y={p.y - p.h / 2}
+            width={p.w}
+            height={p.h}
+            viewBox={`${(p.crop?.l ?? 0) * f.w} ${(p.crop?.t ?? 0) * f.h} ${p.w} ${p.h}`}
+          >
+            <image href={p.src} width={f.w} height={f.h} preserveAspectRatio="none" />
+          </svg>
+        );
+      })}
       {d.squares.map((q) => (
         <rect
           key={`q${q.id}`}

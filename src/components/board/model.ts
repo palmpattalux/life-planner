@@ -56,7 +56,17 @@ export type Picture = {
   src: string;
   group?: number;
   z?: number;
+  // How much of the picture is cropped off each side (left, top, right,
+  // bottom), as parts of the whole picture (0.1 = a tenth). x, y, w and h are
+  // the part that shows.
+  crop?: Crop;
 };
+export type Crop = { l: number; t: number; r: number; b: number };
+// The whole picture's size, crop included.
+export const fullSize = (p: Picture) => ({
+  w: p.crop ? p.w / (1 - p.crop.l - p.crop.r) : p.w,
+  h: p.crop ? p.h / (1 - p.crop.t - p.crop.b) : p.h,
+});
 // A line end is either a free point or attached to a circle, text or square
 // (fromItem / toItem), in which case it sits at that item's centre (on a
 // square: on its outline) and follows it. `bends` are the angle points between the two ends.
