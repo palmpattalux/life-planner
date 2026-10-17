@@ -3,6 +3,8 @@
 export const CIRCLE_SIZE = 64;
 // A haze (the circle menu's Haze) starts at least this big.
 export const HAZE_SIZE = 420;
+// A new haze's colour (also first in a haze's colours).
+export const HAZE_PINK = "#ec4899";
 export const MIN_CIRCLE = 8;
 export const MAX_CIRCLE = 2000;
 export const TEXT_SIZE = 24;

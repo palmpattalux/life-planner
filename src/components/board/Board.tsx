@@ -4,6 +4,7 @@ import { Fragment, useEffect, useImperativeHandle, useLayoutEffect, useRef, useS
 import {
   ATTACH_DISTANCE,
   GLOW_GROW,
+  HAZE_PINK,
   HAZE_SIZE,
   BRACKET_CURL,
   BOARD_H,
@@ -868,11 +869,16 @@ export function Board({
         : onlyTexts
           ? { x: left + (t.x - left) * f, y: scalePt(t).y }
           : scalePt(t);
+    // Pictures resized on their own (or together with only other pictures)
+    // keep their left edge where it is too.
+    const onlyPictures = sel.every((k) => k.startsWith("picture:"));
+    const pictureAt = (p: Point) =>
+      onlyPictures ? { x: box.minX + (p.x - box.minX) * f, y: single ? p.y : scalePt(p).y } : scalePt(p);
 
     setBoard((b) => ({
       circles: b.circles.map((c) => (cIds.has(c.id) ? { ...c, ...scalePt(c), size: c.size * f } : c)),
       squares: b.squares.map((q) => (sIds.has(q.id) ? { ...q, ...scalePt(q), w: q.w * f, h: q.h * f } : q)),
-      pictures: b.pictures.map((p) => (pIds.has(p.id) ? { ...p, ...scalePt(p), w: p.w * f, h: p.h * f } : p)),
+      pictures: b.pictures.map((p) => (pIds.has(p.id) ? { ...p, ...pictureAt(p), w: p.w * f, h: p.h * f } : p)),
       texts: b.texts.map((t) => (tIds.has(t.id) ? { ...t, ...textAt(t), fontSize: t.fontSize * f } : t)),
       lines: b.lines.map((l) =>
         lIds.has(l.id)
@@ -1832,7 +1838,7 @@ export function Board({
       return {
         ...b,
         circles: b.circles.map((x) =>
-          x.id === c.id ? { ...x, haze: TEXT_COLORS[6], size: Math.max(x.size, HAZE_SIZE), z } : x,
+          x.id === c.id ? { ...x, haze: HAZE_PINK, size: Math.max(x.size, HAZE_SIZE), z } : x,
         ),
       };
     });
@@ -3478,7 +3484,7 @@ export function Board({
             {menuCircle.haze ? (
               // A haze's colours.
               <div className="flex gap-1.5 px-2 py-1.5">
-                {TEXT_COLORS.map((color) => (
+                {[HAZE_PINK, ...TEXT_COLORS].map((color) => (
                   <button
                     key={color}
                     data-haze-color={color}
