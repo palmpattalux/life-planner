@@ -69,9 +69,13 @@ export function BoardPreview({ data }: { data: BoardData | null }) {
           strokeWidth={stroke}
         />
       ))}
-      {d.circles.map((c) => (
-        <circle key={`c${c.id}`} cx={c.x} cy={c.y} r={c.size / 2} fill="none" stroke={INK} strokeWidth={stroke} />
-      ))}
+      {d.circles.map((c) =>
+        c.haze ? (
+          <circle key={`c${c.id}`} cx={c.x} cy={c.y} r={c.size / 2} fill={c.haze} opacity={0.15} />
+        ) : (
+          <circle key={`c${c.id}`} cx={c.x} cy={c.y} r={c.size / 2} fill="none" stroke={INK} strokeWidth={stroke} />
+        ),
+      )}
       {lines.map(({ l, pts }) => (
         <polyline
           key={`l${l.id}`}

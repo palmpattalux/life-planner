@@ -1,6 +1,8 @@
 // Sizes, colours and limits used across the board.
 
 export const CIRCLE_SIZE = 64;
+// A haze (the circle menu's Haze) starts at least this big.
+export const HAZE_SIZE = 420;
 export const MIN_CIRCLE = 8;
 export const MAX_CIRCLE = 2000;
 export const TEXT_SIZE = 24;
@@ -13,7 +15,7 @@ export const MAX_PICTURE = 6000;
 export const TOP_LAYER = 1_000_000;
 // How much bigger a glowing text is drawn.
 export const GLOW_GROW = 1.12;
-export const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#9333ea"];
+export const TEXT_COLORS = ["#1c1917", "#78716c", "#dc2626", "#ea580c", "#eab308", "#16a34a", "#2563eb", "#9333ea"];
 export const INK = "#1c1917";
 // The one standard thickness for everything drawn with a line (lines,
 // timelines, circles and squares), and the five thicknesses a line can be

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useImperativeHandle, useLayoutEffect, useRef, useS
 import {
   ATTACH_DISTANCE,
   GLOW_GROW,
+  HAZE_SIZE,
   BRACKET_CURL,
   BOARD_H,
   BOARD_OVERSCROLL,
@@ -596,7 +597,8 @@ export function Board({
       return b && p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
     });
     if (text) return text;
-    return [...data.circles].reverse().find((c) => Math.hypot(c.x - p.x, c.y - p.y) <= c.size / 2);
+    // (Lines don't attach to a haze.)
+    return [...data.circles].reverse().find((c) => !c.haze && Math.hypot(c.x - p.x, c.y - p.y) <= c.size / 2);
   }
 
   // Whether a thing touches the selection box at all.
@@ -1362,7 +1364,7 @@ export function Board({
       // Nearest circle or text within reach (distance from its edge).
       const reach = ATTACH_DISTANCE / scale;
       const near = [
-        ...o.circles.map((c) => ({ c, gap: Math.hypot(c.x - pos.x, c.y - pos.y) - c.size / 2 })),
+        ...o.circles.filter((c) => !c.haze).map((c) => ({ c, gap: Math.hypot(c.x - pos.x, c.y - pos.y) - c.size / 2 })),
         ...o.texts.map((t) => {
           const b = all.find((s) => s.key === keyOf("text", t.id))!;
           const gap = Math.hypot(
@@ -1820,6 +1822,22 @@ export function Board({
   // The circle menu's square icon: swap the circle for a square outline in the
   // same place (same id, so attached lines stay attached), still selected.
   // It goes to the back, behind everything else.
+  // The circle menu's Haze: the circle becomes a big soft blob of colour,
+  // behind everything else.
+  function circleToHaze(c: Circle) {
+    commit();
+    setBoard((b) => {
+      const zs = [...b.circles, ...b.squares, ...b.pictures, ...b.texts].map((x) => x.z ?? 0);
+      const z = Math.min(0, ...zs) - 1;
+      return {
+        ...b,
+        circles: b.circles.map((x) =>
+          x.id === c.id ? { ...x, haze: TEXT_COLORS[6], size: Math.max(x.size, HAZE_SIZE), z } : x,
+        ),
+      };
+    });
+  }
+
   function circleToSquare(c: Circle) {
     commit();
     setBoard((b) => {
@@ -2689,26 +2707,49 @@ export function Board({
           )}
         </svg>
 
-        {circles.map((c) => (
-          <div
-            key={c.id}
-            data-circle={c.id}
-            onPointerDown={(e) => startDrag(e, "circle", c.id)}
-            className="absolute cursor-grab rounded-full border-stone-900 bg-white active:cursor-grabbing"
-            style={{
-              borderWidth: LINE_WIDTH,
-              zIndex: layerOf.get(keyOf("circle", c.id)),
-              width: c.size,
-              height: c.size,
-              left: c.x - c.size / 2,
-              top: c.y - c.size / 2,
-              boxShadow:
-                selection.length > 1 && selection.includes(keyOf("circle", c.id))
-                  ? `0 0 0 ${px(3)}px rgb(59 130 246 / 0.35)`
+        {circles.map((c) =>
+          c.haze ? (
+            // A haze: low-opacity colour fading out to nothing at its edge.
+            <div
+              key={c.id}
+              data-circle={c.id}
+              data-haze
+              onPointerDown={(e) => startDrag(e, "circle", c.id)}
+              className="absolute cursor-grab rounded-full active:cursor-grabbing"
+              style={{
+                zIndex: layerOf.get(keyOf("circle", c.id)),
+                width: c.size,
+                height: c.size,
+                left: c.x - c.size / 2,
+                top: c.y - c.size / 2,
+                background: `radial-gradient(circle closest-side, ${c.haze}4d 0%, ${c.haze}33 45%, ${c.haze}14 75%, ${c.haze}00 100%)`,
+                outline: selection.includes(keyOf("circle", c.id))
+                  ? `${px(1.5)}px dashed rgb(59 130 246 / 0.6)`
                   : undefined,
-            }}
-          />
-        ))}
+                outlineOffset: -px(1.5),
+              }}
+            />
+          ) : (
+            <div
+              key={c.id}
+              data-circle={c.id}
+              onPointerDown={(e) => startDrag(e, "circle", c.id)}
+              className="absolute cursor-grab rounded-full border-stone-900 bg-white active:cursor-grabbing"
+              style={{
+                borderWidth: LINE_WIDTH,
+                zIndex: layerOf.get(keyOf("circle", c.id)),
+                width: c.size,
+                height: c.size,
+                left: c.x - c.size / 2,
+                top: c.y - c.size / 2,
+                boxShadow:
+                  selection.length > 1 && selection.includes(keyOf("circle", c.id))
+                    ? `0 0 0 ${px(3)}px rgb(59 130 246 / 0.35)`
+                    : undefined,
+              }}
+            />
+          ),
+        )}
 
         {squares.map((q) => {
           const inGroup = selection.length > 1 && selection.includes(keyOf("square", q.id));
@@ -3434,19 +3475,47 @@ export function Board({
             view={view}
             className="min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
           >
-            <button
-              onClick={() => circleToText(menuCircle)}
-              className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
-            >
-              Text
-            </button>
-            <button
-              aria-label="Square"
-              onClick={() => circleToSquare(menuCircle)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
-            >
-              <SquareIcon />
-            </button>
+            {menuCircle.haze ? (
+              // A haze's colours.
+              <div className="flex gap-1.5 px-2 py-1.5">
+                {TEXT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    data-haze-color={color}
+                    aria-label={`Colour ${color}`}
+                    onClick={() => {
+                      commit();
+                      setCircles((cs) => cs.map((x) => (x.id === menuCircle.id ? { ...x, haze: color } : x)));
+                    }}
+                    className={`size-5 rounded-full ${menuCircle.haze === color ? "ring-2 ring-stone-400 ring-offset-1" : ""}`}
+                    style={{ background: color }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => circleToText(menuCircle)}
+                  className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+                >
+                  Text
+                </button>
+                <button
+                  aria-label="Square"
+                  onClick={() => circleToSquare(menuCircle)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+                >
+                  <SquareIcon />
+                </button>
+                <button
+                  data-haze-button
+                  onClick={() => circleToHaze(menuCircle)}
+                  className="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+                >
+                  Haze
+                </button>
+              </>
+            )}
             {layerButton(keyOf("circle", menuCircle.id))}
             <LinkButton />
           </Popup>

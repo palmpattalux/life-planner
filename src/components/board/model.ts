@@ -8,7 +8,9 @@ import type { Timeline } from "./timeline";
 // and moved as one.
 // `z`: the layer, for things that overlap (Move to front / back). Higher is
 // in front; left out is 0. Lines are always underneath.
-export type Circle = { id: number; x: number; y: number; size: number; group?: number; z?: number };
+// With `haze` (a colour), drawn as a big, soft, see-through blob with
+// feathered edges instead: a background for ideas that haven't settled yet.
+export type Circle = { id: number; x: number; y: number; size: number; group?: number; z?: number; haze?: string };
 // A square outline (made from a circle); its corners can be dragged to make
 // it any rectangle. Only its outline can be clicked. `label` is the text at
 // its outer top left, in the square's colour. x, y is the centre.
