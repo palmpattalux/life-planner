@@ -134,6 +134,7 @@ export function TodayBox({ email }: { email?: string }) {
           onChange={(items) => shown.change({ ...shown.value!, items })}
           onCheck={(t, done) => t.link && void setLinkDone(supabase, t.link, done).catch(() => {})}
           focusRequest={focus}
+          reorder
         />
       )}
       {shown.failed && shown.value !== null && (
