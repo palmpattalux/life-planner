@@ -124,3 +124,17 @@ alter table public.priority_tasks enable row level security;
 drop policy if exists "own priority tasks" on public.priority_tasks;
 create policy "own priority tasks" on public.priority_tasks
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Added later: Home's week timeline (one row per person), little events at a
+-- date and time, like a bill or an email to check.
+create table if not exists public.home_events (
+  user_id uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  events jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.home_events enable row level security;
+
+drop policy if exists "own home events" on public.home_events;
+create policy "own home events" on public.home_events
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

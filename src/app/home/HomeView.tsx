@@ -10,6 +10,7 @@ import { Deadlines, PriorityBox } from "./PriorityBox";
 import { TodayBox } from "./TodayBox";
 import { useHoverTap } from "./useHoverTap";
 import { useSaved } from "./useSaved";
+import { WeekBox } from "./WeekBox";
 
 // How long until the milestone ends, for the faint line above the boards.
 function countdown(p: Phase | null) {
@@ -83,6 +84,7 @@ export function HomeView({ email }: { email?: string }) {
               setup (supabase/schema.sql).
             </p>
           )}
+          <WeekBox />
         </aside>
         {/* The boards, grouped in the middle of the screen with nothing around them. */}
         <div className="flex min-h-0 flex-1 flex-col items-center xl:overflow-y-auto">

@@ -157,6 +157,26 @@ export async function savePriority(sb: SupabaseClient, tasks: Task[]) {
   if (error) throw error;
 }
 
+// Home's week timeline: little events (a bill, an email to check) at a time
+// (`at`, an ISO date and time), each with its own page (a note) once opened.
+export type HomeEvent = { id: string; text: string; at: string; page?: string };
+
+export async function loadEvents(sb: SupabaseClient): Promise<HomeEvent[]> {
+  const { data, error } = await sb.from("home_events").select("events").maybeSingle();
+  if (error) throw error;
+  return (data?.events as HomeEvent[]) ?? [];
+}
+
+export async function saveEvents(sb: SupabaseClient, events: HomeEvent[]) {
+  const { error } = await sb
+    .from("home_events")
+    .upsert(
+      { events: events.filter((e) => e.text.trim()), updated_at: new Date().toISOString() },
+      { onConflict: "user_id" },
+    );
+  if (error) throw error;
+}
+
 // A board's priority task on Home's Priority tasks: added the first time,
 // and its words kept up to date after that.
 export async function putPriorityTask(sb: SupabaseClient, t: Linked, deadline: string) {
