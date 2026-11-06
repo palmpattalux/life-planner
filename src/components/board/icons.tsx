@@ -216,6 +216,38 @@ export function LayerButton({ onFront, onBack }: { onFront: () => void; onBack: 
   );
 }
 
+// A padlock, shut or open.
+export function LockIcon({ open }: { open?: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    >
+      <rect x="3" y="7" width="10" height="7" rx="1.5" />
+      <path d={open ? "M5.5 7 V5 a2.5 2.5 0 0 1 5 0" : "M5.5 7 V5 a2.5 2.5 0 0 1 5 0 V7"} />
+    </svg>
+  );
+}
+
+// Lock / Unlock in a menu: a locked thing can't be moved.
+export function LockButton({ locked, onToggle }: { locked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      data-lock-button
+      onClick={onToggle}
+      className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-stone-100"
+    >
+      <LockIcon open={locked} />
+      {locked ? "Unlock" : "Lock"}
+    </button>
+  );
+}
+
 // The sample lines' heights, from thinnest to thickest.
 const SAMPLE_HEIGHTS = [1, 1.6, 3.2, 4.8, 8];
 

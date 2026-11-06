@@ -8,9 +8,19 @@ import type { Timeline } from "./timeline";
 // and moved as one.
 // `z`: the layer, for things that overlap (Move to front / back). Higher is
 // in front; left out is 0. Lines are always underneath.
+// `locked`: Lock in its menu; it can't be moved until it's unlocked.
 // With `haze` (a colour), drawn as a big, soft, see-through blob with
 // feathered edges instead: a background for ideas that haven't settled yet.
-export type Circle = { id: number; x: number; y: number; size: number; group?: number; z?: number; haze?: string };
+export type Circle = {
+  id: number;
+  x: number;
+  y: number;
+  size: number;
+  group?: number;
+  z?: number;
+  haze?: string;
+  locked?: boolean;
+};
 // A square outline (made from a circle); its corners can be dragged to make
 // it any rectangle. Only its outline can be clicked. `label` is the text at
 // its outer top left, in the square's colour. x, y is the centre.
@@ -24,6 +34,7 @@ export type Square = {
   label?: string;
   group?: number;
   z?: number;
+  locked?: boolean;
 };
 export type Text = {
   id: number;
@@ -49,6 +60,7 @@ export type Text = {
   deadline?: { line: number; at: string };
   group?: number;
   z?: number;
+  locked?: boolean;
 };
 // A picture pasted in from outside the site. x, y is the centre; `src` is
 // where it's stored (or the picture itself, as a data: address).
@@ -61,6 +73,7 @@ export type Picture = {
   src: string;
   group?: number;
   z?: number;
+  locked?: boolean;
   // How much of the picture is cropped off each side (left, top, right,
   // bottom), as parts of the whole picture (0.1 = a tenth). x, y, w and h are
   // the part that shows.
@@ -102,6 +115,7 @@ export type Line = {
   // a quarter anticlockwise on screen).
   bracket?: 1 | -1;
   group?: number;
+  locked?: boolean;
 };
 export type Pin = { value: string; bold: boolean; color: string };
 export type End = "from" | "to";

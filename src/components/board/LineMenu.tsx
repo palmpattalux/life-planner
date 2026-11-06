@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { INK, TEXT_COLORS } from "./constants";
 import { AngleIcon, LineWidths, LinkButton } from "./icons";
 import { LIMITS, MONTHS, timelineTicks, type Timeline, type TimeUnit } from "./timeline";
@@ -30,6 +30,7 @@ export function LineMenu({
   onColor,
   width,
   onWidth,
+  lock,
 }: {
   time?: Timeline;
   color?: string;
@@ -39,6 +40,7 @@ export function LineMenu({
   onColor: (color: string) => void;
   width: number;
   onWidth: (width: number) => void;
+  lock: ReactNode;
 }) {
   const [step, setStep] = useState<"menu" | "unit" | "range" | "monthStart" | "monthEnd">("menu");
   const [unit, setUnit] = useState<TimeUnit>(time?.unit ?? "day");
@@ -96,6 +98,7 @@ export function LineMenu({
             </div>
           )}
           <LineWidths value={width} onPick={onWidth} />
+          {lock}
           <LinkButton />
         </>
       )}

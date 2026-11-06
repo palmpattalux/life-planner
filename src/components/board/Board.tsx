@@ -77,6 +77,7 @@ import {
   ChecklistIcon,
   ClockIcon,
   CropIcon,
+  LockButton,
   LayerButton,
   LineWidths,
   LinkButton,
@@ -1252,23 +1253,31 @@ export function Board({
     const d = drag.current;
     if (!d) return;
     if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < CLICK_SLOP) return;
+    const o = d.orig;
+    // Locked things stay where they are (dragging one moves nothing, and
+    // locked ones among several don't move with the rest).
+    const unlocked = d.many?.filter((k) => !isLocked(k, o));
+    const own = draggedKey(d);
+    if (unlocked ? !unlocked.length : own && isLocked(own, o)) {
+      d.moved = true;
+      return;
+    }
     if (!d.moved) commit();
     d.moved = true;
     const at = toBoard(e.clientX, e.clientY);
     const dx = at.x - d.start.x;
     const dy = at.y - d.start.y;
     const move = (pt: Point) => ({ x: pt.x + dx, y: pt.y + dy });
-    const o = d.orig;
     const all = (d.snaps ??= snapBoxesOf(o));
 
     // Several things selected: move them all together. Squares among them
     // snap to the other squares, nudging the whole lot.
-    if (d.many) {
-      const many = new Set(d.many);
+    if (unlocked) {
+      const many = new Set(unlocked);
       const moving = all.filter((s) => many.has(s.key));
       const snap = moving.length ? snapBoxes(moving, dx, dy, all, snapReach()) : { dx, dy, lines: [] };
       setSnapGuides(snap.lines);
-      moveMany(d.many, snap.dx, snap.dy, o);
+      moveMany(unlocked, snap.dx, snap.dy, o);
       return;
     }
     // A priority task's text only slides straight across its timeline,
@@ -1397,6 +1406,44 @@ export function Board({
     }
     setLines(() => o.lines.map((l) => (l.id === d.id ? next : l)));
   }
+
+  function isLocked(key: Key, o: BoardData) {
+    const [kind, id] = key.split(":");
+    const list: { id: number; locked?: boolean }[] =
+      kind === "circle"
+        ? o.circles
+        : kind === "square"
+          ? o.squares
+          : kind === "text"
+            ? o.texts
+            : kind === "picture"
+              ? o.pictures
+              : o.lines;
+    return !!list.find((x) => x.id === Number(id))?.locked;
+  }
+
+  // What a drag moves: the thing itself, or the line whose end or bend it is.
+  // (A square's corner resizes it, which a lock doesn't stop.)
+  function draggedKey(d: { kind: DragKind; id: number }): Key | null {
+    if (d.kind === "circle" || d.kind === "square" || d.kind === "text" || d.kind === "picture" || d.kind === "line")
+      return keyOf(d.kind, d.id);
+    if (d.kind === "from" || d.kind === "to" || d.kind === "bend") return keyOf("line", d.id);
+    return null;
+  }
+
+  // The menus' Lock / Unlock.
+  function toggleLock(key: Key) {
+    const [kind, id] = key.split(":");
+    const flip = <T extends { id: number; locked?: boolean }>(xs: T[]) =>
+      xs.map((x) => (x.id === Number(id) ? { ...x, locked: x.locked ? undefined : true } : x));
+    commit();
+    if (kind === "circle") setCircles(flip);
+    else if (kind === "square") setSquares(flip);
+    else if (kind === "text") setTexts(flip);
+    else if (kind === "picture") setPictures(flip);
+    else setLines(flip);
+  }
+  const lockButton = (key: Key) => <LockButton locked={isLocked(key, board)} onToggle={() => toggleLock(key)} />;
 
   // Move these things by dx, dy from where they were in `o`.
   function moveMany(keys: Key[], dx: number, dy: number, o: BoardData) {
@@ -3223,6 +3270,7 @@ export function Board({
                     ))}
                   </div>
                   {layerButton(keyOf("text", t.id))}
+                  {lockButton(keyOf("text", t.id))}
                   {/* A priority task: delete it for good, here and on Home. */}
                   {t.deadline && (
                     <button
@@ -3273,6 +3321,7 @@ export function Board({
                   Crop
                 </button>
                 {layer}
+                {lockButton(keyOf("picture", p.id))}
               </Popup>
             );
           })()}
@@ -3314,6 +3363,7 @@ export function Board({
                     onColor={(color) => updateLine(l.id, { color })}
                     width={l.width ?? LINE_WIDTH}
                     onWidth={(width) => updateLine(l.id, { width })}
+                    lock={lockButton(keyOf("line", l.id))}
                     onDone={(time) => {
                       updateLine(l.id, { time });
                       setSelection([]);
@@ -3523,6 +3573,7 @@ export function Board({
               </>
             )}
             {layerButton(keyOf("circle", menuCircle.id))}
+            {lockButton(keyOf("circle", menuCircle.id))}
             <LinkButton />
           </Popup>
         )}
@@ -3581,6 +3632,7 @@ export function Board({
               Text
             </button>
             {layerButton(keyOf("square", menuSquare.id))}
+            {lockButton(keyOf("square", menuSquare.id))}
             <LinkButton />
           </Popup>
         )}
