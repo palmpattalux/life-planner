@@ -58,6 +58,9 @@ export type Text = {
   // ISO date and time). The text only slides across that timeline, staying
   // level with its date.
   deadline?: { line: number; at: string };
+  // A note (N tapped): the text is its name, beside a page icon; hovering the
+  // icon shows these few lines.
+  note?: string;
   group?: number;
   z?: number;
   locked?: boolean;

@@ -16,6 +16,7 @@ import {
   CHECKED,
   CIRCLE_SIZE,
   CLICK_SLOP,
+  NOTE_TAP_MS,
   PRIORITY_REACH,
   PRIORITY_TEXT_SIZE,
   DEADLINE_MARK,
@@ -87,6 +88,7 @@ import {
 } from "./icons";
 import { clamp, isTrackpadSwipe, straighten } from "./input";
 import { LineMenu } from "./LineMenu";
+import { NoteCard, PageIcon } from "./NoteCard";
 import { Popup } from "./Popup";
 import { PriorityPicker } from "./PriorityPicker";
 import { LinkMenu, type AddTarget, type TaskPage } from "./LinkMenu";
@@ -271,6 +273,11 @@ export function Board({
 
   const [selection, setSelection] = useState<Key[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
+  // The note whose card shows (hovering its icon, or writing in it), and
+  // the board's "Notes" switch that shows every note's card at once.
+  const [noteOpen, setNoteOpen] = useState<{ id: number; edit: boolean } | null>(null);
+  const [allNotes, setAllNotes] = useState(false);
+  const noteHide = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Choosing a phase on a timeline: the first tick picked (null until the
   // first click) and the tick under the mouse.
   // `pin`: choosing one mark to pin instead of a stretch.
@@ -1191,12 +1198,23 @@ export function Board({
         pickPictures(cursorOnBoard());
       } else if (key === keys.line && !draftRef.current) {
         const at = latchToSquare(cursorOnBoard());
+        lineKeyAt.current = Date.now();
         setDraft({ from: at, to: at });
       }
     }
 
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key.toLowerCase() === getShortcuts().line) finishDraft();
+      if (e.key.toLowerCase() !== getShortcuts().line) return;
+      // Tapped (not held, nothing drawn): a new note there, ready to name.
+      const d = draftRef.current;
+      const tapped =
+        d &&
+        Date.now() - lineKeyAt.current < NOTE_TAP_MS &&
+        Math.hypot(d.to.x - d.from.x, d.to.y - d.from.y) * viewRef.current.scale < CLICK_SLOP;
+      if (tapped) {
+        setDraft(null);
+        addText(cursorOnBoard(), "", { note: "" });
+      } else finishDraft();
     }
 
     // Pasting: a picture copied from outside the site goes on the board at
@@ -1795,12 +1813,12 @@ export function Board({
   // "t": a new empty text at this spot, ready to type (like the circle menu's
   // Text, without the circle).
   // A new text at `at`: empty and ready to type, or holding pasted words.
-  function addText(at: Point, words = "") {
+  function addText(at: Point, words = "", extra?: Partial<Text>) {
     const id = nextId.current++;
     commit();
     setTexts((ts) => [
       ...ts,
-      { id, x: at.x, y: at.y, text: words, fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false },
+      { id, x: at.x, y: at.y, text: words, fontSize: TEXT_SIZE, color: TEXT_COLORS[0], bold: false, ...extra },
     ]);
     setSelection([]);
     if (words) return setSelection([keyOf("text", id)]);
@@ -2019,6 +2037,26 @@ export function Board({
     }
     // An empty text would be invisible, so drop it.
     removeKeys([keyOf("text", id)]);
+  }
+
+  // When N went down: held, it draws a line; tapped, it adds a note.
+  const lineKeyAt = useRef(0);
+
+  // A note's card: hovering its icon shows it; leaving the icon and the card
+  // hides it again (after a moment, so the pointer can move onto the card).
+  function hoverNote(id: number | null) {
+    if (noteHide.current) clearTimeout(noteHide.current);
+    noteHide.current = null;
+    if (id !== null) {
+      setNoteOpen((o) => (o?.edit ? o : { id, edit: false }));
+      return;
+    }
+    noteHide.current = setTimeout(() => setNoteOpen((o) => (o?.edit ? o : null)), 200);
+  }
+
+  function saveNote(id: number, note: string) {
+    setNoteOpen(null);
+    if (texts.find((t) => t.id === id)?.note !== note) updateText(id, { note });
   }
 
   function updateText(id: number, patch: Partial<Text>) {
@@ -3185,6 +3223,40 @@ export function Board({
                   </div>
                 )}
 
+                {t.note !== undefined && (
+                  <span
+                    data-note-icon={t.id}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    onPointerEnter={() => hoverNote(t.id)}
+                    onPointerLeave={() => hoverNote(null)}
+                    onClick={() => !viewing && setNoteOpen({ id: t.id, edit: true })}
+                    className="absolute top-1/2 flex -translate-y-1/2 cursor-pointer"
+                    style={{
+                      right: "100%",
+                      fontSize: t.fontSize * 1.1,
+                      color: t.color,
+                      zIndex: layerOf.get(keyOf("text", t.id)),
+                    }}
+                  >
+                    <PageIcon />
+                  </span>
+                )}
+                {t.note !== undefined && (allNotes || noteOpen?.id === t.id) && (
+                  <div className="absolute left-0" style={{ top: "100%", marginTop: px(6), zIndex: TOP_LAYER }}>
+                    <NoteCard
+                      key={`${t.id}-${noteOpen?.id === t.id && noteOpen.edit}`}
+                      note={t.note}
+                      scale={view.scale}
+                      editing={noteOpen?.id === t.id && noteOpen.edit}
+                      onEdit={viewing ? undefined : () => setNoteOpen({ id: t.id, edit: true })}
+                      onDone={(note) => saveNote(t.id, note)}
+                      onPointerEnter={() => noteOpen?.id === t.id && hoverNote(t.id)}
+                      onPointerLeave={() => noteOpen?.id === t.id && hoverNote(null)}
+                    />
+                  </div>
+                )}
+
                 {sizeShownFor === t.id && (
                   <div
                     data-size-label
@@ -3737,6 +3809,29 @@ export function Board({
           style={{ right: menuOpen ? SIDE_MENU_W + 16 : 16 }}
         >
           {presetSaved ? "Preset saved" : editingPreset ? "Update preset" : "Save preset"}
+        </button>
+      )}
+
+      {/* With notes on the board: a switch that shows all their cards at once. */}
+      {texts.some((t) => t.note !== undefined) && (
+        <button
+          data-notes-switch
+          role="switch"
+          aria-checked={allNotes}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setAllNotes((on) => !on)}
+          className="fixed bottom-4 left-4 flex items-center gap-2 rounded-full border border-stone-200 bg-white py-1.5 pl-3 pr-1.5 text-sm font-medium shadow"
+          style={{ zIndex: TOP_LAYER }}
+        >
+          <PageIcon />
+          See all notes
+          <span
+            className={`relative h-5 w-9 rounded-full transition-colors ${allNotes ? "bg-stone-900" : "bg-stone-300"}`}
+          >
+            <span
+              className={`absolute top-0.5 size-4 rounded-full bg-white transition-[left] ${allNotes ? "left-[18px]" : "left-0.5"}`}
+            />
+          </span>
         </button>
       )}
 

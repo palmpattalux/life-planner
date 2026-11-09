@@ -19,7 +19,7 @@ export const ACTIONS: { action: Action; label: string }[] = [
   { action: "text", label: "New text" },
   { action: "view", label: "View mode" },
   { action: "circle", label: "New circle" },
-  { action: "line", label: "Draw a line (hold)" },
+  { action: "line", label: "Draw a line (hold) / new note (tap)" },
   { action: "presets", label: "Presets menu" },
   { action: "centre", label: "Centre the view" },
   { action: "picture", label: "Add a picture" },

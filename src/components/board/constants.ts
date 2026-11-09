@@ -85,3 +85,6 @@ export const ATTACH_DISTANCE = 16;
 export const SNAP_DISTANCE = 8;
 // Square labels grow and shrink with their square.
 export const squareLabelSize = (size: number) => Math.max(8, size / 4);
+
+// Tapping the line key (N) shorter than this adds a note; holding it draws a line.
+export const NOTE_TAP_MS = 250;
