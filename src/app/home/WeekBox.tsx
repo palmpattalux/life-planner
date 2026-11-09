@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { TrashIcon } from "@/components/board/icons";
+import { CalendarIcon, TrashIcon } from "@/components/board/icons";
 import { createTaskPage, loadEvents, saveEvents, type HomeEvent } from "@/lib/planner";
 import { createClient } from "@/lib/supabase/client";
 import { NoteButton } from "./NoteButton";
@@ -58,6 +59,7 @@ export function WeekBox() {
     return (day + (d.getTime() - midnight(d).getTime()) / DAY_MS) * DAY_H;
   };
   const shown = list.filter((e) => {
+    if (!e.at) return false;
     const y = yOf(new Date(e.at));
     return y >= 0 && y < 7 * DAY_H;
   });
@@ -101,7 +103,16 @@ export function WeekBox() {
   return (
     <section data-week className={box}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-semibold">{ahead ? "Next week" : "This week"}</h2>
+        {/* The heading opens the calendar page. */}
+        <Link
+          href="/calendar"
+          data-week-calendar
+          title="Open the calendar"
+          className="-mx-1.5 flex items-center gap-1.5 rounded px-1.5 font-semibold hover:bg-stone-100"
+        >
+          {ahead ? "Next week" : "This week"}
+          <CalendarIcon />
+        </Link>
         <button
           type="button"
           data-week-switch
@@ -151,7 +162,7 @@ export function WeekBox() {
             />
           )}
           {shown.map((e) => {
-            const at = new Date(e.at);
+            const at = new Date(e.at!);
             const y = yOf(at);
             return (
               <div

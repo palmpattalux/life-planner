@@ -159,7 +159,9 @@ export async function savePriority(sb: SupabaseClient, tasks: Task[]) {
 
 // Home's week timeline: little events (a bill, an email to check) at a time
 // (`at`, an ISO date and time), each with its own page (a note) once opened.
-export type HomeEvent = { id: string; text: string; at: string; page?: string };
+// A little event: on Home's week timeline at a moment (`at`), or on the
+// calendar page on a date (`day`, "YYYY-MM-DD") with one of its icons.
+export type HomeEvent = { id: string; text: string; at?: string; day?: string; icon?: string; page?: string };
 
 export async function loadEvents(sb: SupabaseClient): Promise<HomeEvent[]> {
   const { data, error } = await sb.from("home_events").select("events").maybeSingle();
